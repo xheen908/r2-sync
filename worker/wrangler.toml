@@ -1,0 +1,13 @@
+name = "r2-share-worker"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# Bind local R2 Bucket (Represents your easyfisk-docs bucket)
+[[r2_buckets]]
+binding = "MY_BUCKET"
+bucket_name = "easyfisk-docs"
+
+# Environment Variables / Config
+[vars]
+# Domain or Public Worker URL for generated Share Links
+BASE_URL = "https://r2-share-worker.YOUR_SUBDOMAIN.workers.dev"
