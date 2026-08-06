@@ -44,7 +44,6 @@ cp "${TARGET_DIR}/${APP_NAME}" "dist/${APP_NAME}.app/Contents/MacOS/"
 cp AppIcon.icns "dist/${APP_NAME}.app/Contents/Resources/"
 cp Info.plist "dist/${APP_NAME}.app/Contents/"
 
-# Write strictly valid XML Info.plist for appex
 cat << 'EOF' > "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -75,7 +74,7 @@ cat << 'EOF' > "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appe
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.FinderSync</string>
         <key>NSExtensionPrincipalClass</key>
-        <string>_TtC21R2SyncFinderExtension10FinderSync</string>
+        <string>FinderSync</string>
     </dict>
 </dict>
 </plist>

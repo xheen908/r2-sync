@@ -9,7 +9,7 @@
     <key>CFBundleIdentifier</key>
     <string>com.r2sync.app</string>
     <key>CFBundleName</key>
-    <string>R2Sync</string>
+    <string>R2SyncApp</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
