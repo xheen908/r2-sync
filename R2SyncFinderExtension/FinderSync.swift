@@ -43,15 +43,21 @@ public class FinderSync: FIFinderSync {
 
     @objc func copyPublicLink(_ sender: AnyObject?) {
         guard let items = FIFinderSyncController.default().selectedItemURLs(), let item = items.first else { return }
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let rootURL = home.appendingPathComponent("Documents/EasyFisk-Docs")
-        
+        let defaults = UserDefaults(suiteName: "com.r2sync.app") ?? UserDefaults.standard
+        let syncFolderPath = defaults.string(forKey: "r2_sync_folder_path") ?? (FileManager.default.homeDirectoryForCurrentUser.path + "/Documents/EasyFisk-Docs")
+        var publicDomainURL = defaults.string(forKey: "r2_public_domain_url") ?? "https://pub-7934cd421fb044609578237788351fae.r2.dev"
+        if !publicDomainURL.hasSuffix("/") { publicDomainURL += "/" }
+
+        let rootURL = URL(fileURLWithPath: syncFolderPath)
         var relativePath = String(item.path.dropFirst(rootURL.path.count))
         if relativePath.hasPrefix("/") { relativePath = String(relativePath.dropFirst()) }
 
+        let finalShareURL = publicDomainURL + relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(relativePath, forType: .string)
+        pasteboard.declareTypes([.string], owner: nil)
+        pasteboard.setString(finalShareURL, forType: .string)
     }
 
     @objc func forceSyncItem(_ sender: AnyObject?) {

@@ -68,6 +68,12 @@ final class ConfigManager: ObservableObject {
         defaults.set(newConfig.syncFolderPath, forKey: "r2_sync_folder_path")
         defaults.set(newConfig.publicDomainURL, forKey: "r2_public_domain_url")
 
+        if let suiteDefaults = UserDefaults(suiteName: "com.r2sync.app") {
+            suiteDefaults.set(newConfig.bucketName, forKey: "r2_bucket_name")
+            suiteDefaults.set(newConfig.syncFolderPath, forKey: "r2_sync_folder_path")
+            suiteDefaults.set(newConfig.publicDomainURL, forKey: "r2_public_domain_url")
+        }
+
         try? KeychainHelper.shared.save(key: "r2_account_id", stringValue: newConfig.accountId)
         try? KeychainHelper.shared.save(key: "r2_access_key_id", stringValue: newConfig.accessKeyId)
         try? KeychainHelper.shared.save(key: "r2_secret_access_key", stringValue: newConfig.secretAccessKey)

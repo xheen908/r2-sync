@@ -6,9 +6,11 @@ guard CommandLine.arguments.count > 1 else { exit(0) }
 let filePath = CommandLine.arguments[1]
 let fileURL = URL(fileURLWithPath: filePath)
 
+let appDefaults = UserDefaults(suiteName: "com.r2sync.app")
 let defaults = UserDefaults.standard
-let syncFolderPath = defaults.string(forKey: "r2_sync_folder_path") ?? (FileManager.default.homeDirectoryForCurrentUser.path + "/Documents/EasyFisk-Docs")
-var publicDomainURL = defaults.string(forKey: "r2_public_domain_url") ?? "https://pub-7934cd421fb044609578237788351fae.r2.dev"
+
+let syncFolderPath = appDefaults?.string(forKey: "r2_sync_folder_path") ?? defaults.string(forKey: "r2_sync_folder_path") ?? (FileManager.default.homeDirectoryForCurrentUser.path + "/Documents/EasyFisk-Docs")
+var publicDomainURL = appDefaults?.string(forKey: "r2_public_domain_url") ?? defaults.string(forKey: "r2_public_domain_url") ?? "https://pub-7934cd421fb044609578237788351fae.r2.dev"
 
 if !publicDomainURL.hasSuffix("/") {
     publicDomainURL += "/"
@@ -27,3 +29,4 @@ pasteboard.declareTypes([.string], owner: nil)
 pasteboard.setString(finalShareURL, forType: .string)
 
 print("COPIED PUBLIC R2 LINK:", finalShareURL)
+

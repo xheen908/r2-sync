@@ -1,0 +1,19 @@
+name = "r2sync-drive"
+compatibility_date = "2024-08-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+# Cloudflare R2 Bucket Binding
+[[r2_buckets]]
+binding = "MY_BUCKET"
+bucket_name = "easyfisk-docs"
+
+# Cloudflare D1 (SQLite Database) Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "r2sync-db"
+database_id = "r2sync-db-id" # Created via `npx wrangler d1 create r2sync-db`
+
+[vars]
+BASE_URL = "https://drive.ocpp-labs.com"
+ADMIN_SECRET_KEY = "r2sync_secret_key_change_me"
