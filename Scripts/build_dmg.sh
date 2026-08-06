@@ -44,45 +44,9 @@ cp "${TARGET_DIR}/${APP_NAME}" "dist/${APP_NAME}.app/Contents/MacOS/"
 cp AppIcon.icns "dist/${APP_NAME}.app/Contents/Resources/"
 cp Info.plist "dist/${APP_NAME}.app/Contents/"
 
-cat << 'EOF' > "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex/Contents/Info.plist"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>R2SyncFinderExtension</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.r2sync.app.R2SyncFinderExtension</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>R2SyncFinderExtension</string>
-    <key>CFBundlePackageType</key>
-    <string>XPC!</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>NSExtension</key>
-    <dict>
-        <key>NSExtensionAttributes</key>
-        <dict/>
-        <key>NSExtensionPointIdentifier</key>
-        <string>com.apple.FinderSync</string>
-        <key>NSExtensionPrincipalClass</key>
-        <string>_TtC21R2SyncFinderExtension10FinderSync</string>
-    </dict>
-</dict>
-</plist>
-EOF
-
+cp R2SyncFinderExtension/Info.plist "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex/Contents/Info.plist"
 cp "${TARGET_DIR}/R2SyncFinderExtension" "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex/Contents/MacOS/"
 
-# Sign with custom R2DevCert certificate
 codesign --force --deep --options runtime --entitlements Entitlements.plist --sign "R2DevCert" "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex" || true
 codesign --force --deep --options runtime --sign "R2DevCert" "dist/${APP_NAME}.app" || true
 

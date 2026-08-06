@@ -11,8 +11,9 @@ let package = Package(
             name: "R2SyncApp",
             targets: ["R2SyncApp"]
         ),
-        .executable(
+        .library(
             name: "R2SyncFinderExtension",
+            type: .dynamic,
             targets: ["R2SyncFinderExtension"]
         )
     ],
@@ -29,7 +30,7 @@ let package = Package(
             ],
             path: "Sources/R2SyncApp"
         ),
-        .executableTarget(
+        .target(
             name: "R2SyncFinderExtension",
             dependencies: [],
             path: "R2SyncFinderExtension"
