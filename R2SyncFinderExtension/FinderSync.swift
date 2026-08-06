@@ -6,9 +6,31 @@ class FinderSync: FIFinderSync {
 
     override init() {
         super.init()
+        updateMonitoredDirectories()
+    }
+
+    private func updateMonitoredDirectories() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let defaultPath = home.appendingPathComponent("Documents/EasyFisk-Docs")
-        FIFinderSyncController.default().directoryURLs = [defaultPath]
+        
+        var urlsToMonitor: Set<URL> = [defaultPath, defaultPath.resolvingSymlinksInPath()]
+
+        // Enumerate all subdirectories recursively so FinderSync context menus work inside folders!
+        let fileManager = FileManager.default
+        if let enumerator = fileManager.enumerator(
+            at: defaultPath,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for case let fileURL as URL in enumerator {
+                var isDirectory: ObjCBool = false
+                if fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                    urlsToMonitor.insert(fileURL)
+                }
+            }
+        }
+
+        FIFinderSyncController.default().directoryURLs = urlsToMonitor
     }
 
     override func requestBadgeIdentifier(for url: URL) {
@@ -44,7 +66,8 @@ class FinderSync: FIFinderSync {
     @objc func copyPublicLink(_ sender: AnyObject?) {
         guard let items = FIFinderSyncController.default().selectedItemURLs(), let item = items.first else { return }
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let rootURL = home.appendingPathComponent("Documents/EasyFisk-Docs")
+        let defaultPath = home.appendingPathComponent("Documents/EasyFisk-Docs").path
+        let rootURL = URL(fileURLWithPath: defaultPath)
         
         var relativePath = String(item.path.dropFirst(rootURL.path.count))
         if relativePath.hasPrefix("/") { relativePath = String(relativePath.dropFirst()) }
