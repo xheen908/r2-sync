@@ -268,6 +268,7 @@ struct SettingsView: View {
     @State private var secretAccessKey: String = ""
     @State private var bucketName: String = ""
     @State private var syncFolderPath: String = ""
+    @State private var publicDomainURL: String = ""
     @State private var statusMessage: String?
 
     var body: some View {
