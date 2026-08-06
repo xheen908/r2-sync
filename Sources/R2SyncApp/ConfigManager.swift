@@ -7,6 +7,7 @@ struct R2Config: Codable {
     var secretAccessKey: String
     var bucketName: String
     var syncFolderPath: String
+    var publicDomainURL: String
 
     var s3EndpointURL: URL? {
         URL(string: "https://\(accountId).r2.cloudflarestorage.com")
@@ -14,7 +15,7 @@ struct R2Config: Codable {
 
     static let defaultSyncFolder: String = {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        return homeDir.appendingPathComponent("R2Sync").path
+        return homeDir.appendingPathComponent("Documents/EasyFisk-Docs").path
     }()
 
     static var empty: R2Config {
@@ -23,7 +24,8 @@ struct R2Config: Codable {
             accessKeyId: "",
             secretAccessKey: "",
             bucketName: "",
-            syncFolderPath: defaultSyncFolder
+            syncFolderPath: defaultSyncFolder,
+            publicDomainURL: "https://pub-7934cd421fb044609578237788351fae.r2.dev"
         )
     }
 }
@@ -46,13 +48,15 @@ final class ConfigManager: ObservableObject {
         let secretAccessKey = (try? KeychainHelper.shared.readString(key: "r2_secret_access_key")) ?? ""
         let bucketName = defaults.string(forKey: "r2_bucket_name") ?? ""
         let syncFolderPath = defaults.string(forKey: "r2_sync_folder_path") ?? R2Config.defaultSyncFolder
+        let publicDomainURL = defaults.string(forKey: "r2_public_domain_url") ?? "https://pub-7934cd421fb044609578237788351fae.r2.dev"
 
         self.config = R2Config(
             accountId: accountId,
             accessKeyId: accessKeyId,
             secretAccessKey: secretAccessKey,
             bucketName: bucketName,
-            syncFolderPath: syncFolderPath
+            syncFolderPath: syncFolderPath,
+            publicDomainURL: publicDomainURL
         )
     }
 
@@ -62,6 +66,7 @@ final class ConfigManager: ObservableObject {
         let defaults = UserDefaults.standard
         defaults.set(newConfig.bucketName, forKey: "r2_bucket_name")
         defaults.set(newConfig.syncFolderPath, forKey: "r2_sync_folder_path")
+        defaults.set(newConfig.publicDomainURL, forKey: "r2_public_domain_url")
 
         try? KeychainHelper.shared.save(key: "r2_account_id", stringValue: newConfig.accountId)
         try? KeychainHelper.shared.save(key: "r2_access_key_id", stringValue: newConfig.accessKeyId)

@@ -278,6 +278,7 @@ struct SettingsView: View {
                     TextField("Access Key ID:", text: $accessKeyId, prompt: Text("z.B. 6e87984a4bbe49caaee83a4d3eee39a0"))
                     SecureField("Secret Access Key:", text: $secretAccessKey, prompt: Text("Schlüssel hier eingeben"))
                     TextField("Bucket Name:", text: $bucketName, prompt: Text("z.B. easyfisk-docs"))
+                    TextField("Öffentliche Domain / URL:", text: $publicDomainURL, prompt: Text("z.B. https://pub-7934cd421fb044609578237788351fae.r2.dev"))
                 }
 
                 Section(header: Text("Lokales Verzeichnis").font(.headline)) {
@@ -321,6 +322,7 @@ struct SettingsView: View {
             secretAccessKey = configManager.config.secretAccessKey
             bucketName = configManager.config.bucketName
             syncFolderPath = configManager.config.syncFolderPath
+            publicDomainURL = configManager.config.publicDomainURL
         }
     }
 
@@ -345,7 +347,8 @@ struct SettingsView: View {
             accessKeyId: accessKeyId,
             secretAccessKey: secretAccessKey,
             bucketName: bucketName,
-            syncFolderPath: syncFolderPath
+            syncFolderPath: syncFolderPath,
+            publicDomainURL: publicDomainURL
         )
         configManager.saveConfig(newConfig)
         
