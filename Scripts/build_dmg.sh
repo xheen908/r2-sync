@@ -44,7 +44,7 @@ cp "${TARGET_DIR}/${APP_NAME}" "dist/${APP_NAME}.app/Contents/MacOS/"
 cp AppIcon.icns "dist/${APP_NAME}.app/Contents/Resources/"
 cp Info.plist "dist/${APP_NAME}.app/Contents/"
 
-# Generate valid Info.plist for extension
+# Write strictly valid XML Info.plist for appex
 cat << 'EOF' > "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -83,11 +83,9 @@ EOF
 
 cp "${TARGET_DIR}/R2SyncFinderExtension" "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex/Contents/MacOS/"
 
-# Ad-hoc Code Sign App & Extension for macOS Sandbox validation
 codesign --force --deep --sign - "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex" || true
 codesign --force --deep --sign - "dist/${APP_NAME}.app" || true
 
-# Install to /Applications
 rm -rf /Applications/R2SyncApp.app
 cp -R "dist/${APP_NAME}.app" /Applications/
 
@@ -95,19 +93,4 @@ echo "[4/5] Registering Extension with macOS PlugInKit..."
 pluginkit -a "/Applications/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex" || true
 pluginkit -e use -i com.r2sync.app.R2SyncFinderExtension || true
 
-echo "[5/5] Creating Styled DMG Disk Image..."
-rm -f "dist/${DMG_NAME}"
-
-create-dmg \
-  --volname "R2Sync Installer" \
-  --volicon "AppIcon.icns" \
-  --window-pos 200 120 \
-  --window-size 600 400 \
-  --icon-size 110 \
-  --icon "${APP_NAME}.app" 160 180 \
-  --hide-extension "${APP_NAME}.app" \
-  --app-drop-link 440 180 \
-  "dist/${DMG_NAME}" \
-  "dist/${APP_NAME}.app"
-
-echo "✅ Build & CodeSign complete!"
+echo "✅ App & Extension updated successfully!"
