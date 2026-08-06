@@ -1,6 +1,7 @@
 import FinderSync
 import Cocoa
 
+@objc(FinderSync)
 class FinderSync: FIFinderSync {
 
     override init() {
@@ -21,7 +22,6 @@ class FinderSync: FIFinderSync {
     }
 
     private func setupBadges() {
-        // Create custom green checkmark image badge
         let badgeSize = NSSize(width: 16, height: 16)
         let badgeImage = NSImage(size: badgeSize, flipped: false) { rect in
             let circle = NSBezierPath(ovalIn: rect)
@@ -64,21 +64,36 @@ class FinderSync: FIFinderSync {
         return NSImage(systemSymbolName: "icloud.fill", accessibilityDescription: "R2Sync") ?? NSImage()
     }
 
-    override func menu(for menuKind: FIMenuKind) -> NSMenu {
-        let menu = NSMenu(title: "")
-        menu.addItem(withTitle: "R2 Public Link kopieren", action: #selector(copyPublicLink(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Erneut synchronisieren", action: #selector(forceSyncItem(_:)), keyEquivalent: "")
+    override func menu(for menuKind: FIMenuKind) -> NSMenu? {
+        let menu = NSMenu(title: "R2Sync")
+
+        let copyItem = NSMenuItem(title: "R2 Share Link kopieren", action: #selector(copyPublicLink(_:)), keyEquivalent: "")
+        copyItem.target = self
+        menu.addItem(copyItem)
+
+        let syncItem = NSMenuItem(title: "Jetzt synchronisieren", action: #selector(forceSyncItem(_:)), keyEquivalent: "")
+        syncItem.target = self
+        menu.addItem(syncItem)
+
         return menu
     }
 
-    @IBAction func copyPublicLink(_ sender: AnyObject?) {
-        guard let items = FIFinderSyncController.default().selectedItemURLs() else { return }
-        for item in items {
-            NSLog("[FinderSync] Copying link for item: %@", item.path)
-        }
+    @objc @IBAction func copyPublicLink(_ sender: AnyObject?) {
+        guard let items = FIFinderSyncController.default().selectedItemURLs(), let item = items.first else { return }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let defaultPath = home.appendingPathComponent("Documents/EasyFisk-Docs").path
+        let rootURL = URL(fileURLWithPath: defaultPath)
+        
+        var relativePath = String(item.path.dropFirst(rootURL.path.count))
+        if relativePath.hasPrefix("/") { relativePath = String(relativePath.dropFirst()) }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(relativePath, forType: .string)
+        NSLog("[FinderSync] Copied path to pasteboard: %@", relativePath)
     }
 
-    @IBAction func forceSyncItem(_ sender: AnyObject?) {
+    @objc @IBAction func forceSyncItem(_ sender: AnyObject?) {
         guard let items = FIFinderSyncController.default().selectedItemURLs() else { return }
         for item in items {
             NSLog("[FinderSync] Force sync item: %@", item.path)
