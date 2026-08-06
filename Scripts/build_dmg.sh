@@ -74,7 +74,7 @@ cat << 'EOF' > "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appe
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.FinderSync</string>
         <key>NSExtensionPrincipalClass</key>
-        <string>FinderSync</string>
+        <string>_TtC21R2SyncFinderExtension10FinderSync</string>
     </dict>
 </dict>
 </plist>
@@ -82,8 +82,8 @@ EOF
 
 cp "${TARGET_DIR}/R2SyncFinderExtension" "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex/Contents/MacOS/"
 
-codesign --force --deep --options runtime --entitlements Entitlements.plist --sign - "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex" || true
-codesign --force --deep --options runtime --sign - "dist/${APP_NAME}.app" || true
+codesign --force --deep --sign - "dist/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex" || true
+codesign --force --deep --sign - "dist/${APP_NAME}.app" || true
 
 rm -rf /Applications/R2SyncApp.app
 cp -R "dist/${APP_NAME}.app" /Applications/
@@ -95,4 +95,4 @@ echo "[4/5] Registering Extension with macOS PlugInKit..."
 pluginkit -a "/Applications/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex" || true
 pluginkit -e use -i com.r2sync.app.R2SyncFinderExtension || true
 
-echo "✅ App & Extension updated with Sandbox Entitlements!"
+echo "✅ App & Extension updated successfully!"
