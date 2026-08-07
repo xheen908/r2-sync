@@ -1611,7 +1611,7 @@ export default function DashboardPage() {
           {/* Media Body */}
           <div
             onClick={(e) => e.stopPropagation()}
-            className="flex-1 w-full max-w-5xl flex items-center justify-center my-4 overflow-hidden relative"
+            className="flex-1 w-full max-w-7xl flex items-center justify-center my-2 overflow-auto relative"
           >
             {(() => {
               const ext = previewModalFile.filename.split(".").pop()?.toLowerCase() || "";
@@ -1624,7 +1624,7 @@ export default function DashboardPage() {
                   <img
                     src={downloadUrl}
                     alt={previewModalFile.filename}
-                    className="max-h-[80vh] max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800/80 transition-all duration-300"
+                    className="max-h-[85vh] max-w-[95vw] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-slate-800/80 transition-all duration-300"
                   />
                 );
               }
@@ -1633,7 +1633,7 @@ export default function DashboardPage() {
                 return (
                   <iframe
                     src={downloadUrl}
-                    className="w-full h-[80vh] rounded-2xl border border-slate-800 shadow-2xl bg-slate-900"
+                    className="w-full h-[85vh] rounded-2xl border border-slate-800 shadow-2xl bg-slate-900"
                     title={previewModalFile.filename}
                   />
                 );
