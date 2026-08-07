@@ -30,6 +30,11 @@ export async function getDb(): Promise<Database> {
         created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS files (
         id TEXT PRIMARY KEY,
         path TEXT UNIQUE NOT NULL,

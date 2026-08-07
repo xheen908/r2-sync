@@ -34,6 +34,15 @@ import {
   Edit3,
   Info as InfoIcon,
   MoreVertical,
+  Settings,
+  User,
+  Shield,
+  Key,
+  CheckCircle2,
+  AlertCircle,
+  Database,
+  Globe,
+  Sliders,
 } from "lucide-react";
 
 interface FileItem {
@@ -79,17 +88,48 @@ interface ContextMenuState {
   row: ExplorerRow;
 }
 
+interface R2SettingsData {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKeyConfigured: boolean;
+  bucketName: string;
+  publicDomainUrl: string;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"files" | "settings">("files");
+
+  // Files & Navigation state
   const [files, setFiles] = useState<FileItem[]>([]);
-  const [currentPath, setCurrentPath] = useState<string>(""); // "" = Root directory
+  const [currentPath, setCurrentPath] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Context Menu state
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Settings & R2 Connection state
+  const [r2Config, setR2Config] = useState<R2SettingsData | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [r2Error, setR2Error] = useState<string | null>(null);
 
-  // Modals state
+  // Form states for Settings GUI
+  const [formAccountId, setFormAccountId] = useState("");
+  const [formAccessKeyId, setFormAccessKeyId] = useState("");
+  const [formSecretAccessKey, setFormSecretAccessKey] = useState("");
+  const [formBucketName, setFormBucketName] = useState("");
+  const [formPublicDomainUrl, setFormPublicDomainUrl] = useState("");
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Form states for Account Manager
+  const [currentUsername, setCurrentUsername] = useState("admin");
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [accountStatus, setAccountStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Context Menu & Modals state
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [infoModal, setInfoModal] = useState<FileItem | null>(null);
   const [renameModal, setRenameModal] = useState<FileItem | null>(null);
   const [newFilenameInput, setNewFilenameInput] = useState("");
@@ -106,10 +146,8 @@ export default function DashboardPage() {
   const [modalTab, setModalTab] = useState<"create" | "list">("create");
   const [activeShares, setActiveShares] = useState<ActiveShareItem[]>([]);
   const [loadingActiveShares, setLoadingActiveShares] = useState(false);
-
-  // Share link creation options
   const [ttlHours, setTtlHours] = useState<number>(24);
-  const [password, setPassword] = useState("");
+  const [sharePassword, setSharePassword] = useState("");
   const [generatedLink, setGeneratedLink] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -133,11 +171,30 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch("/api/settings");
+      const data = await res.json();
+      if (data.config) {
+        setR2Config(data.config);
+        setIsConnected(data.isConnected);
+        setR2Error(data.errorDetails);
+
+        setFormAccountId(data.config.accountId || "");
+        setFormAccessKeyId(data.config.accessKeyId || "");
+        setFormBucketName(data.config.bucketName || "");
+        setFormPublicDomainUrl(data.config.publicDomainUrl || "");
+      }
+    } catch (err) {
+      console.error("Failed to fetch settings", err);
+    }
+  };
+
   useEffect(() => {
     fetchFiles();
+    fetchSettings();
   }, []);
 
-  // Close context menu on global click or Escape
   useEffect(() => {
     const handleGlobalClick = () => setContextMenu(null);
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -151,19 +208,14 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // Right-click context menu handler
   const handleContextMenu = (e: React.MouseEvent, row: ExplorerRow) => {
     e.preventDefault();
     e.stopPropagation();
-
-    // Bound x and y inside viewport
     const x = Math.min(e.clientX, window.innerWidth - 220);
     const y = Math.min(e.clientY, window.innerHeight - 250);
-
     setContextMenu({ x, y, row });
   };
 
-  // Upload dropped files to current path
   const uploadFiles = async (fileList: FileList | File[], targetFolder = currentPath) => {
     if (!fileList || fileList.length === 0) return;
     setUploading(true);
@@ -188,7 +240,6 @@ export default function DashboardPage() {
     fetchFiles();
   };
 
-  // Move file into target folder
   const moveFileToFolder = async (fileItem: FileItem, targetFolderPath: string) => {
     try {
       const res = await fetch("/api/files/move", {
@@ -207,7 +258,77 @@ export default function DashboardPage() {
     }
   };
 
-  // Handle Rename submit
+  const handleSaveR2Settings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingSettings(true);
+    setSettingsStatus(null);
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: formAccountId,
+          accessKeyId: formAccessKeyId,
+          secretAccessKey: formSecretAccessKey,
+          bucketName: formBucketName,
+          publicDomainUrl: formPublicDomainUrl,
+        }),
+      });
+
+      if (res.ok) {
+        setSettingsStatus({ type: "success", message: "Cloudflare Einstellungen erfolgreich gespeichert!" });
+        setFormSecretAccessKey("");
+        fetchSettings();
+        fetchFiles();
+      } else {
+        setSettingsStatus({ type: "error", message: "Fehler beim Speichern der Einstellungen" });
+      }
+    } catch (err) {
+      setSettingsStatus({ type: "error", message: "Verbindungsfehler beim Speichern" });
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleUpdateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAccountStatus(null);
+
+    if (newPassword && newPassword !== confirmPassword) {
+      setAccountStatus({ type: "error", message: "Passwörter stimmen nicht überein!" });
+      return;
+    }
+
+    setSavingAccount(true);
+    try {
+      const res = await fetch("/api/account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentUsername,
+          newUsername: newUsername.trim() || undefined,
+          newPassword: newPassword.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAccountStatus({ type: "success", message: "Konto-Zugangsdaten erfolgreich aktualisiert!" });
+        if (data.updatedUsername) setCurrentUsername(data.updatedUsername);
+        setNewUsername("");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        setAccountStatus({ type: "error", message: data.error || "Aktualisierung fehlgeschlagen" });
+      }
+    } catch (err) {
+      setAccountStatus({ type: "error", message: "Verbindungsfehler beim Konto-Update" });
+    } finally {
+      setSavingAccount(false);
+    }
+  };
+
   const handleRenameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!renameModal || !newFilenameInput.trim()) return;
@@ -234,30 +355,6 @@ export default function DashboardPage() {
     }
   };
 
-  // External Drag Over Window
-  const handleWindowDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.types.includes("Files")) {
-      setIsDraggingExternal(true);
-    }
-  };
-
-  const handleWindowDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.relatedTarget === null) {
-      setIsDraggingExternal(false);
-    }
-  };
-
-  const handleWindowDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDraggingExternal(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      uploadFiles(e.dataTransfer.files);
-    }
-  };
-
-  // Fetch active share links when opening Share Modal
   const fetchActiveShares = async (filePath: string) => {
     setLoadingActiveShares(true);
     try {
@@ -279,7 +376,7 @@ export default function DashboardPage() {
   const openShareModal = (file: FileItem) => {
     setShareModal({ filePath: file.path, filename: file.filename });
     setGeneratedLink("");
-    setPassword("");
+    setSharePassword("");
     setModalTab("create");
     fetchActiveShares(file.path);
   };
@@ -303,7 +400,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           filePath: shareModal.filePath,
           ttlHours: ttlHours === 0 ? null : ttlHours,
-          password: password || undefined,
+          password: sharePassword || undefined,
         }),
       });
 
@@ -454,9 +551,21 @@ export default function DashboardPage() {
 
   return (
     <div
-      onDragOver={handleWindowDragOver}
-      onDragLeave={handleWindowDragLeave}
-      onDrop={handleWindowDrop}
+      onDragOver={(e) => {
+        e.preventDefault();
+        if (e.dataTransfer.types.includes("Files")) setIsDraggingExternal(true);
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        if (e.relatedTarget === null) setIsDraggingExternal(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsDraggingExternal(false);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          uploadFiles(e.dataTransfer.files);
+        }
+      }}
       className="min-h-screen flex flex-col bg-slate-950 text-slate-100 relative selection:bg-orange-500 selection:text-white"
     >
       {/* External Dropzone Overlay */}
@@ -480,36 +589,78 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Top Navbar */}
-      <header className="h-16 border-b border-slate-800 bg-slate-900/60 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-20">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-md shadow-orange-500/20">
-            <Cloud className="w-6 h-6 text-white" />
+      {/* MODERN TOP NAVBAR HEADER */}
+      <header className="h-16 border-b border-slate-800/90 bg-slate-900/80 backdrop-blur-xl px-6 flex items-center justify-between sticky top-0 z-30">
+        {/* Brand & Connection Status Pill */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-lg shadow-orange-500/25">
+              <Cloud className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold text-white tracking-tight flex items-center gap-2 text-base">
+                R2Sync Drive
+              </h1>
+              <p className="text-[11px] text-slate-400">easyfisk-docs • ocpp-labs.com</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-white tracking-tight flex items-center gap-2">
-              R2Sync Drive
-              <span className="text-[10px] font-semibold bg-orange-500/20 text-orange-400 border border-orange-500/30 px-2 py-0.5 rounded-full uppercase">
-                VPS SQLite
-              </span>
-            </h1>
-            <p className="text-xs text-slate-400">easyfisk-docs • ocpp-labs.com</p>
+
+          {/* R2 Connection Live Pill Badge */}
+          <div
+            onClick={() => setActiveTab("settings")}
+            className={`cursor-pointer hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+              isConnected
+                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+                : "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20"
+            }`}
+            title={isConnected ? "Cloudflare R2 Verbunden" : r2Error || "Verbindung prüfen"}
+          >
+            <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
+            <span>{isConnected ? `R2 Verbunden (${r2Config?.bucketName || "easyfisk-docs"})` : "R2 Getrennt"}</span>
           </div>
+        </div>
+
+        {/* Navigation Tabs Header */}
+        <div className="flex items-center gap-2 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80">
+          <button
+            onClick={() => setActiveTab("files")}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === "files"
+                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-900"
+            }`}
+          >
+            <Folder className="w-3.5 h-3.5" />
+            <span>Dateimanager</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("settings")}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === "settings"
+                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-900"
+            }`}
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Konto & Einstellungen</span>
+          </button>
         </div>
 
         {/* Right Actions */}
         <div className="flex items-center gap-3">
-          {/* File Upload Button */}
-          <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium cursor-pointer shadow-md shadow-orange-500/20 transition-all active:scale-95">
-            <Upload className="w-4 h-4" />
-            <span className="hidden sm:inline">Hochladen</span>
-            <input
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => e.target.files && uploadFiles(e.target.files)}
-            />
-          </label>
+          {activeTab === "files" && (
+            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold cursor-pointer shadow-md shadow-orange-500/20 transition-all active:scale-95">
+              <Upload className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Hochladen</span>
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+              />
+            </label>
+          )}
 
           <button
             onClick={fetchFiles}
@@ -521,242 +672,455 @@ export default function DashboardPage() {
 
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-sm transition-colors border border-slate-700/50"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium transition-colors border border-slate-700/50"
+            title="Abmelden"
           >
-            <LogOut className="w-4 h-4" />
-            <span>Abmelden</span>
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Abmelden</span>
           </button>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
-        {/* Toolbar & Search */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/80">
-          {/* Breadcrumb Navigation */}
-          <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (draggedFileItem) {
-                moveFileToFolder(draggedFileItem, "");
-                setDraggedFileItem(null);
-              }
-            }}
-            className="flex items-center gap-1.5 overflow-x-auto text-sm text-slate-300 w-full sm:w-auto py-1"
-          >
-            <button
-              onClick={() => setCurrentPath("")}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${
-                !currentPath ? "bg-orange-500/20 text-orange-400 font-semibold" : "hover:bg-slate-800 text-slate-400"
-              }`}
+      {/* VIEW 1: FILE MANAGER */}
+      {activeTab === "files" && (
+        <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
+          {/* Toolbar & Search */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/80">
+            {/* Breadcrumb Navigation */}
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (draggedFileItem) {
+                  moveFileToFolder(draggedFileItem, "");
+                  setDraggedFileItem(null);
+                }
+              }}
+              className="flex items-center gap-1.5 overflow-x-auto text-sm text-slate-300 w-full sm:w-auto py-1"
             >
-              <Home className="w-4 h-4" />
-              <span>Root</span>
-            </button>
-
-            {breadcrumbs.map((b) => (
-              <div
-                key={b.path}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (draggedFileItem) {
-                    moveFileToFolder(draggedFileItem, b.path);
-                    setDraggedFileItem(null);
-                  }
-                }}
-                className="flex items-center gap-1.5"
+              <button
+                onClick={() => setCurrentPath("")}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${
+                  !currentPath ? "bg-orange-500/20 text-orange-400 font-semibold" : "hover:bg-slate-800 text-slate-400"
+                }`}
               >
-                <ChevronRight className="w-4 h-4 text-slate-600 shrink-0" />
-                <button
-                  onClick={() => setCurrentPath(b.path)}
-                  className={`px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap ${
-                    currentPath === b.path
-                      ? "bg-orange-500/20 text-orange-400 font-semibold"
-                      : "hover:bg-slate-800 text-slate-400"
-                  }`}
-                >
-                  {b.name}
-                </button>
-              </div>
-            ))}
-          </div>
+                <Home className="w-4 h-4" />
+                <span>Root</span>
+              </button>
 
-          {/* Search Input */}
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Alle Dateien durchsuchen..."
-              className="w-full bg-slate-950/80 border border-slate-800 focus:border-orange-500 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder-slate-500 outline-none transition-all"
-            />
-          </div>
-        </div>
-
-        {/* Back button if inside subfolder */}
-        {currentPath && !searchQuery && (
-          <div className="flex items-center">
-            <button
-              onClick={navigateUp}
-              className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-white px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Übergeordneter Ordner</span>
-            </button>
-          </div>
-        )}
-
-        {/* File Table / Explorer */}
-        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          {loading ? (
-            <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-3">
-              <RefreshCw className="w-8 h-8 animate-spin text-orange-500" />
-              <p>Dateien und Ordner werden geladen...</p>
-            </div>
-          ) : displayRows.length === 0 ? (
-            <div className="p-16 text-center text-slate-500 flex flex-col items-center gap-3">
-              <Folder className="w-12 h-12 text-slate-700" />
-              <p className="text-base font-medium">Dieser Ordner ist leer</p>
-              <p className="text-xs text-slate-600">
-                Ziehe Dateien von deinem PC hierher zum Hochladen oder per Rechtsklick Aktionen ausführen.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-300 select-none">
-                <thead className="bg-slate-900/90 text-xs uppercase font-semibold text-slate-400 border-b border-slate-800">
-                  <tr>
-                    <th className="py-3.5 px-4">Name</th>
-                    <th className="py-3.5 px-4">Größe / Inhalt</th>
-                    <th className="py-3.5 px-4">Aktualisiert</th>
-                    <th className="py-3.5 px-4 text-right">Aktionen</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {displayRows.map((row, idx) => {
-                    if (row.isFolder) {
-                      const isHoveredTarget = dragOverFolder === row.fullPath;
-                      return (
-                        <tr
-                          key={`folder_${row.fullPath}_${idx}`}
-                          onClick={() => setCurrentPath(row.fullPath)}
-                          onContextMenu={(e) => handleContextMenu(e, row)}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            setDragOverFolder(row.fullPath);
-                          }}
-                          onDragLeave={() => setDragOverFolder(null)}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            setDragOverFolder(null);
-
-                            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                              uploadFiles(e.dataTransfer.files, row.fullPath);
-                            } else if (draggedFileItem) {
-                              moveFileToFolder(draggedFileItem, row.fullPath);
-                              setDraggedFileItem(null);
-                            }
-                          }}
-                          className={`cursor-pointer transition-all group ${
-                            isHoveredTarget
-                              ? "bg-orange-500/20 border-2 border-orange-500"
-                              : "hover:bg-slate-800/50"
-                          }`}
-                        >
-                          <td className="py-3.5 px-4 flex items-center gap-3">
-                            <Folder className="w-5 h-5 text-amber-400 fill-amber-400/20 group-hover:scale-110 transition-transform" />
-                            <span className="font-semibold text-slate-200 group-hover:text-amber-400 transition-colors">
-                              {row.name}
-                            </span>
-                            {isHoveredTarget && (
-                              <span className="text-[10px] bg-orange-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">
-                                Hier ablegen
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4 text-slate-400 text-xs">
-                            {row.itemCount} {row.itemCount === 1 ? "Datei" : "Dateien"}
-                          </td>
-                          <td className="py-3.5 px-4 text-slate-500 text-xs">—</td>
-                          <td className="py-3.5 px-4 text-right">
-                            <button
-                              onClick={(e) => handleContextMenu(e, row)}
-                              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    } else {
-                      const file = row.item;
-                      return (
-                        <tr
-                          key={file.id}
-                          draggable
-                          onDragStart={() => setDraggedFileItem(file)}
-                          onDragEnd={() => setDraggedFileItem(null)}
-                          onContextMenu={(e) => handleContextMenu(e, row)}
-                          className="hover:bg-slate-800/40 transition-colors group cursor-grab active:cursor-grabbing"
-                        >
-                          <td className="py-3.5 px-4 flex items-center gap-3">
-                            <Move className="w-3.5 h-3.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            {getFileIcon(file.filename)}
-                            <div className="flex flex-col gap-0.5">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-slate-200 group-hover:text-white transition-colors">
-                                  {file.filename}
-                                </span>
-                                {file.activeSharesCount && file.activeSharesCount > 0 ? (
-                                  <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                                    <Share2 className="w-2.5 h-2.5" />
-                                    <span>
-                                      {file.activeSharesCount}{" "}
-                                      {file.activeSharesCount === 1 ? "aktiver Link" : "aktive Links"}
-                                    </span>
-                                  </span>
-                                ) : null}
-                              </div>
-                              {searchQuery && (
-                                <span className="text-[11px] text-slate-500 truncate max-w-xs">
-                                  {file.path}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-4 text-slate-400 font-mono text-xs">
-                            {formatBytes(file.size)}
-                          </td>
-                          <td className="py-3.5 px-4 text-slate-400 text-xs">
-                            {new Date(file.updatedAt).toLocaleDateString("de-DE", {
-                              day: "2-digit",
-                              month: "2-digit",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </td>
-                          <td className="py-3.5 px-4 text-right">
-                            <button
-                              onClick={(e) => handleContextMenu(e, row)}
-                              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
+              {breadcrumbs.map((b) => (
+                <div
+                  key={b.path}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (draggedFileItem) {
+                      moveFileToFolder(draggedFileItem, b.path);
+                      setDraggedFileItem(null);
                     }
-                  })}
-                </tbody>
-              </table>
+                  }}
+                  className="flex items-center gap-1.5"
+                >
+                  <ChevronRight className="w-4 h-4 text-slate-600 shrink-0" />
+                  <button
+                    onClick={() => setCurrentPath(b.path)}
+                    className={`px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap ${
+                      currentPath === b.path
+                        ? "bg-orange-500/20 text-orange-400 font-semibold"
+                        : "hover:bg-slate-800 text-slate-400"
+                    }`}
+                  >
+                    {b.name}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Alle Dateien durchsuchen..."
+                className="w-full bg-slate-950/80 border border-slate-800 focus:border-orange-500 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder-slate-500 outline-none transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Back button if inside subfolder */}
+          {currentPath && !searchQuery && (
+            <div className="flex items-center">
+              <button
+                onClick={navigateUp}
+                className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-white px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Übergeordneter Ordner</span>
+              </button>
             </div>
           )}
-        </div>
-      </main>
+
+          {/* File Table / Explorer */}
+          <div className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            {loading ? (
+              <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-3">
+                <RefreshCw className="w-8 h-8 animate-spin text-orange-500" />
+                <p>Dateien und Ordner werden geladen...</p>
+              </div>
+            ) : displayRows.length === 0 ? (
+              <div className="p-16 text-center text-slate-500 flex flex-col items-center gap-3">
+                <Folder className="w-12 h-12 text-slate-700" />
+                <p className="text-base font-medium">Dieser Ordner ist leer</p>
+                <p className="text-xs text-slate-600">
+                  Ziehe Dateien von deinem PC hierher zum Hochladen oder per Rechtsklick Aktionen ausführen.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-slate-300 select-none">
+                  <thead className="bg-slate-900/90 text-xs uppercase font-semibold text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="py-3.5 px-4">Name</th>
+                      <th className="py-3.5 px-4">Größe / Inhalt</th>
+                      <th className="py-3.5 px-4">Aktualisiert</th>
+                      <th className="py-3.5 px-4 text-right">Aktionen</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {displayRows.map((row, idx) => {
+                      if (row.isFolder) {
+                        const isHoveredTarget = dragOverFolder === row.fullPath;
+                        return (
+                          <tr
+                            key={`folder_${row.fullPath}_${idx}`}
+                            onClick={() => setCurrentPath(row.fullPath)}
+                            onContextMenu={(e) => handleContextMenu(e, row)}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setDragOverFolder(row.fullPath);
+                            }}
+                            onDragLeave={() => setDragOverFolder(null)}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setDragOverFolder(null);
+
+                              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                uploadFiles(e.dataTransfer.files, row.fullPath);
+                              } else if (draggedFileItem) {
+                                moveFileToFolder(draggedFileItem, row.fullPath);
+                                setDraggedFileItem(null);
+                              }
+                            }}
+                            className={`cursor-pointer transition-all group ${
+                              isHoveredTarget
+                                ? "bg-orange-500/20 border-2 border-orange-500"
+                                : "hover:bg-slate-800/50"
+                            }`}
+                          >
+                            <td className="py-3.5 px-4 flex items-center gap-3">
+                              <Folder className="w-5 h-5 text-amber-400 fill-amber-400/20 group-hover:scale-110 transition-transform" />
+                              <span className="font-semibold text-slate-200 group-hover:text-amber-400 transition-colors">
+                                {row.name}
+                              </span>
+                              {isHoveredTarget && (
+                                <span className="text-[10px] bg-orange-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">
+                                  Hier ablegen
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-400 text-xs">
+                              {row.itemCount} {row.itemCount === 1 ? "Datei" : "Dateien"}
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-500 text-xs">—</td>
+                            <td className="py-3.5 px-4 text-right">
+                              <button
+                                onClick={(e) => handleContextMenu(e, row)}
+                                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      } else {
+                        const file = row.item;
+                        return (
+                          <tr
+                            key={file.id}
+                            draggable
+                            onDragStart={() => setDraggedFileItem(file)}
+                            onDragEnd={() => setDraggedFileItem(null)}
+                            onContextMenu={(e) => handleContextMenu(e, row)}
+                            className="hover:bg-slate-800/40 transition-colors group cursor-grab active:cursor-grabbing"
+                          >
+                            <td className="py-3.5 px-4 flex items-center gap-3">
+                              <Move className="w-3.5 h-3.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              {getFileIcon(file.filename)}
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-slate-200 group-hover:text-white transition-colors">
+                                    {file.filename}
+                                  </span>
+                                  {file.activeSharesCount && file.activeSharesCount > 0 ? (
+                                    <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                      <Share2 className="w-2.5 h-2.5" />
+                                      <span>
+                                        {file.activeSharesCount}{" "}
+                                        {file.activeSharesCount === 1 ? "aktiver Link" : "aktive Links"}
+                                      </span>
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {searchQuery && (
+                                  <span className="text-[11px] text-slate-500 truncate max-w-xs">
+                                    {file.path}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-400 font-mono text-xs">
+                              {formatBytes(file.size)}
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-400 text-xs">
+                              {new Date(file.updatedAt).toLocaleDateString("de-DE", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </td>
+                            <td className="py-3.5 px-4 text-right">
+                              <button
+                                onClick={(e) => handleContextMenu(e, row)}
+                                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </main>
+      )}
+
+      {/* VIEW 2: KONTO & EINSTELLUNGEN MANAGER */}
+      {activeTab === "settings" && (
+        <main className="flex-1 max-w-5xl w-full mx-auto p-6 space-y-8">
+          {/* Card 1: Account Manager */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 shadow-2xl backdrop-blur-md">
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-800">
+              <div className="w-10 h-10 rounded-2xl bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center justify-center">
+                <User className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">Konto & Sicherheit</h2>
+                <p className="text-xs text-slate-400">Verwalte deinen Admin-Benutzernamen und dein Passwort</p>
+              </div>
+            </div>
+
+            {accountStatus && (
+              <div
+                className={`mb-6 p-3.5 rounded-xl text-xs flex items-center gap-2 border ${
+                  accountStatus.type === "success"
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                    : "bg-red-500/10 border-red-500/30 text-red-400"
+                }`}
+              >
+                {accountStatus.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                <span>{accountStatus.message}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateAccount} className="space-y-4 max-w-lg">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Benutzername
+                </label>
+                <input
+                  type="text"
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  placeholder={`Aktuell: ${currentUsername}`}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Neues Passwort
+                  </label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Neues Passwort"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Passwort bestätigen
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Wiederholen"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingAccount}
+                className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-medium px-5 py-2.5 rounded-xl shadow-lg shadow-orange-500/20 text-xs transition-all active:scale-95 disabled:opacity-50"
+              >
+                {savingAccount ? "Speichere..." : "Konto-Daten aktualisieren"}
+              </button>
+            </form>
+          </div>
+
+          {/* Card 2: Cloudflare R2 Connection Settings GUI */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 shadow-2xl backdrop-blur-md">
+            <div className="flex items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Cloudflare R2 Zugangsdaten</h2>
+                  <p className="text-xs text-slate-400">
+                    Binde deine R2 Keys direkt aus der Web-Oberfläche ein (überschreibt die .env)
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border ${
+                  isConnected
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                    : "bg-red-500/10 text-red-400 border-red-500/30"
+                }`}
+              >
+                {isConnected ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                <span>{isConnected ? "S3 R2 Verbunden" : "Verbindung getrennt"}</span>
+              </div>
+            </div>
+
+            {settingsStatus && (
+              <div
+                className={`mb-6 p-3.5 rounded-xl text-xs flex items-center gap-2 border ${
+                  settingsStatus.type === "success"
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                    : "bg-red-500/10 border-red-500/30 text-red-400"
+                }`}
+              >
+                {settingsStatus.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                <span>{settingsStatus.message}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveR2Settings} className="space-y-4 max-w-2xl">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Cloudflare Account ID
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formAccountId}
+                  onChange={(e) => setFormAccountId(e.target.value)}
+                  placeholder="z.B. 10c9109e9e342e2b4fc55e71ddf91c17"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white font-mono outline-none focus:border-orange-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Access Key ID
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formAccessKeyId}
+                    onChange={(e) => setFormAccessKeyId(e.target.value)}
+                    placeholder="S3 Access Key ID"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white font-mono outline-none focus:border-orange-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Secret Access Key
+                  </label>
+                  <input
+                    type="password"
+                    value={formSecretAccessKey}
+                    onChange={(e) => setFormSecretAccessKey(e.target.value)}
+                    placeholder={r2Config?.secretAccessKeyConfigured ? "•••••••••••••••• (Konfiguriert)" : "Secret Key eingeben"}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white font-mono outline-none focus:border-orange-500 placeholder-slate-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Bucket Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formBucketName}
+                    onChange={(e) => setFormBucketName(e.target.value)}
+                    placeholder="z.B. easyfisk-docs"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Öffentliche Domain / URL
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formPublicDomainUrl}
+                    onChange={(e) => setFormPublicDomainUrl(e.target.value)}
+                    placeholder="https://drive.ocpp-labs.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={savingSettings}
+                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold px-6 py-2.5 rounded-xl shadow-lg shadow-orange-500/20 text-xs transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <RefreshCw className={`w-4 h-4 ${savingSettings ? "animate-spin" : ""}`} />
+                  <span>{savingSettings ? "Prüfe & Speichere..." : "R2 Verbindung testen & Speichern"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </main>
+      )}
 
       {/* MACOS FINDER CONTEXT MENU */}
       {contextMenu && (
@@ -767,7 +1131,6 @@ export default function DashboardPage() {
         >
           {!contextMenu.row.isFolder ? (
             <>
-              {/* File Options */}
               <button
                 onClick={() => {
                   handleDirectDownload((contextMenu.row as FileRow).item);
@@ -829,7 +1192,6 @@ export default function DashboardPage() {
             </>
           ) : (
             <>
-              {/* Folder Options */}
               <button
                 onClick={() => {
                   setCurrentPath((contextMenu.row as DirectoryRow).fullPath);
@@ -867,10 +1229,7 @@ export default function DashboardPage() {
       {renameModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
-            <button
-              onClick={() => setRenameModal(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
+            <button onClick={() => setRenameModal(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
               <X className="w-5 h-5" />
             </button>
 
@@ -924,10 +1283,7 @@ export default function DashboardPage() {
       {infoModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
-            <button
-              onClick={() => setInfoModal(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
+            <button onClick={() => setInfoModal(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
               <X className="w-5 h-5" />
             </button>
 
@@ -1065,8 +1421,8 @@ export default function DashboardPage() {
                       </label>
                       <input
                         type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        value={sharePassword}
+                        onChange={(e) => setSharePassword(e.target.value)}
                         placeholder="Leer lassen für keinen Passwortschutz"
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
                       />
@@ -1132,7 +1488,7 @@ export default function DashboardPage() {
                 ) : activeShares.length === 0 ? (
                   <div className="p-8 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
                     <Share2 className="w-8 h-8 text-slate-700" />
-                    <span>Keine aktiven Freigabelinks für diese Datei vorhanden</span>
+                    <span>Keine aktiven Freigabelinks vorhanden</span>
                   </div>
                 ) : (
                   activeShares.map((share) => (
@@ -1183,7 +1539,7 @@ export default function DashboardPage() {
                         <button
                           onClick={() => handleRevokeShareLink(share.id)}
                           className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors text-xs flex items-center gap-1"
-                          title="Freigabelink löschen (unbrauchbar machen)"
+                          title="Freigabelink löschen"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           <span>Löschen</span>
