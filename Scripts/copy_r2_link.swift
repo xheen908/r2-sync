@@ -12,6 +12,10 @@ let defaults = UserDefaults.standard
 let syncFolderPath = appDefaults?.string(forKey: "r2_sync_folder_path") ?? defaults.string(forKey: "r2_sync_folder_path") ?? (FileManager.default.homeDirectoryForCurrentUser.path + "/Documents/EasyFisk-Docs")
 var publicDomainURL = appDefaults?.string(forKey: "r2_public_domain_url") ?? defaults.string(forKey: "r2_public_domain_url") ?? "https://drive.ocpp-labs.com"
 
+if publicDomainURL.contains("ocpp-labs.com") && !publicDomainURL.contains("drive.ocpp-labs.com") {
+    publicDomainURL = "https://drive.ocpp-labs.com"
+}
+
 if publicDomainURL.hasSuffix("/") {
     publicDomainURL = String(publicDomainURL.dropLast())
 }

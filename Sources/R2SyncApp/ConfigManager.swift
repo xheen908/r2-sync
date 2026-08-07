@@ -25,7 +25,7 @@ struct R2Config: Codable {
             secretAccessKey: "",
             bucketName: "",
             syncFolderPath: defaultSyncFolder,
-            publicDomainURL: "https://pub-7934cd421fb044609578237788351fae.r2.dev"
+            publicDomainURL: "https://drive.ocpp-labs.com"
         )
     }
 }
@@ -48,7 +48,7 @@ final class ConfigManager: ObservableObject {
         let secretAccessKey = (try? KeychainHelper.shared.readString(key: "r2_secret_access_key")) ?? ""
         let bucketName = defaults.string(forKey: "r2_bucket_name") ?? ""
         let syncFolderPath = defaults.string(forKey: "r2_sync_folder_path") ?? R2Config.defaultSyncFolder
-        let publicDomainURL = defaults.string(forKey: "r2_public_domain_url") ?? "https://pub-7934cd421fb044609578237788351fae.r2.dev"
+        let publicDomainURL = defaults.string(forKey: "r2_public_domain_url") ?? "https://drive.ocpp-labs.com"
 
         self.config = R2Config(
             accountId: accountId,

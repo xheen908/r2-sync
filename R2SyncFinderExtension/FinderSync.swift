@@ -55,6 +55,10 @@ public class FinderSync: FIFinderSync {
         let syncFolderPath = defaults.string(forKey: "r2_sync_folder_path") ?? (FileManager.default.homeDirectoryForCurrentUser.path + "/Documents/EasyFisk-Docs")
         var publicDomainURL = defaults.string(forKey: "r2_public_domain_url") ?? "https://drive.ocpp-labs.com"
         
+        if publicDomainURL.contains("ocpp-labs.com") && !publicDomainURL.contains("drive.ocpp-labs.com") {
+            publicDomainURL = "https://drive.ocpp-labs.com"
+        }
+
         if publicDomainURL.hasSuffix("/") {
             publicDomainURL = String(publicDomainURL.dropLast())
         }
@@ -80,23 +84,29 @@ public class FinderSync: FIFinderSync {
 
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload.compactMapValues { $0 })
 
+        let semaphore = DispatchSemaphore(value: 0)
+        var shareUrlToCopy = ""
+
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            var shareUrlToCopy = ""
+            defer { semaphore.signal() }
             if let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let urlStr = json["shareUrl"] as? String {
                 shareUrlToCopy = urlStr
             } else {
-                shareUrlToCopy = "\(publicDomainURL)/s/\(relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath)"
-            }
-
-            DispatchQueue.main.async {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.declareTypes([.string], owner: nil)
-                pasteboard.setString(shareUrlToCopy, forType: .string)
+                print("[FinderSync] API call failed, error: \(String(describing: error))")
             }
         }
         task.resume()
+        _ = semaphore.wait(timeout: .now() + 5.0)
+
+        if shareUrlToCopy.isEmpty {
+            shareUrlToCopy = "\(publicDomainURL)/s/\(relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath)"
+        }
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.declareTypes([.string], owner: nil)
+        pasteboard.setString(shareUrlToCopy, forType: .string)
     }
 }
