@@ -95,10 +95,13 @@ export async function GET(
       return NextResponse.json({ error: "Originaldatei nicht gefunden" }, { status: 404 });
     }
 
+    const inlineParam = url.searchParams.get("inline");
+    const disposition = inlineParam === "1" ? "inline" : `attachment; filename="${encodeURIComponent(filename)}"`;
+
     const stream = fileRes.Body.transformToWebStream();
     const headers = new Headers();
     headers.set("Content-Type", fileRes.ContentType || "application/octet-stream");
-    headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+    headers.set("Content-Disposition", disposition);
 
     return new Response(stream, { headers });
   } catch (r2StreamErr) {

@@ -337,15 +337,51 @@ export default function PublicSharePage() {
                 )}
               </div>
             ) : (
-              /* IF SINGLE FILE SHARE: Render Single Download Button */
-              <button
-                onClick={() => handleDownloadFile()}
-                disabled={!!downloadingFile}
-                className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold py-3 rounded-xl shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all active:scale-[0.99] disabled:opacity-50"
-              >
-                <Download className="w-5 h-5" />
-                <span>{downloadingFile ? "Download läuft..." : "Datei Herunterladen"}</span>
-              </button>
+              /* IF SINGLE FILE SHARE: Render Live Preview & Single Download Button */
+              <div className="space-y-5">
+                {(() => {
+                  const ext = shareInfo?.filename.split(".").pop()?.toLowerCase() || "";
+                  const isImage = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic"].includes(ext);
+                  const isPdf = ext === "pdf";
+                  
+                  const downloadUrl = `/api/s/${shareId}/download?inline=1${password ? `&password=${encodeURIComponent(password)}` : ""}`;
+
+                  if (isImage) {
+                    return (
+                      <div className="w-full bg-slate-950/80 p-2 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
+                        <img
+                          src={downloadUrl}
+                          alt={shareInfo?.filename}
+                          className="max-h-[65vh] max-w-full object-contain rounded-xl transition-all"
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (isPdf) {
+                    return (
+                      <div className="w-full bg-slate-950/80 p-2 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+                        <iframe
+                          src={downloadUrl}
+                          className="w-full h-[65vh] rounded-xl bg-slate-900"
+                          title={shareInfo?.filename}
+                        />
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()}
+
+                <button
+                  onClick={() => handleDownloadFile()}
+                  disabled={!!downloadingFile}
+                  className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold py-3 rounded-xl shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all active:scale-[0.99] disabled:opacity-50"
+                >
+                  <Download className="w-5 h-5" />
+                  <span>{downloadingFile ? "Download läuft..." : "Datei Herunterladen"}</span>
+                </button>
+              </div>
             )}
           </div>
         )}
