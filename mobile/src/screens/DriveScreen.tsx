@@ -12,6 +12,9 @@ import {
   Alert,
   Share,
   Modal,
+  Image,
+  ActivityIndicator,
+  Linking,
 } from "react-native";
 import {
   Cloud,
@@ -27,12 +30,20 @@ import {
   Clock,
   Infinity as InfinityIcon,
   RefreshCw,
+  FolderInput,
+  Home,
+  Eye,
+  X,
+  ExternalLink,
+  Download,
 } from "lucide-react-native";
 import {
   fetchFilesList,
   deleteFileFromVPS,
+  moveFileOnVPS,
   generateShareLink,
   clearConfig,
+  getSavedConfig,
   FileItem,
 } from "../services/api";
 import {
@@ -51,8 +62,12 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   const [currentFolder, setCurrentFolder] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncProgressStatus | null>(null);
-  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+  const [selectedFile, setSelectedFile] = useState<any | null>(null);
   const [isActionModalVisible, setIsActionModalVisible] = useState(false);
+  const [isMoveModalVisible, setIsMoveModalVisible] = useState(false);
+  const [isImagePreviewVisible, setIsImagePreviewVisible] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [isImageLoading, setIsImageLoading] = useState(false);
 
   const loadData = async () => {
     try {
@@ -102,6 +117,25 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     };
   }, []);
 
+  // Extract all available folder paths in the bucket
+  const getAllAvailableFolders = () => {
+    const foldersSet = new Set<string>();
+    foldersSet.add(""); // Root / Hauptverzeichnis
+
+    files.forEach((f) => {
+      const parts = f.path.split("/");
+      if (parts.length > 1) {
+        let acc = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+          acc = acc ? `${acc}/${parts[i]}` : parts[i];
+          foldersSet.add(acc);
+        }
+      }
+    });
+
+    return Array.from(foldersSet);
+  };
+
   // Compute current folder contents & subfolders
   const getDisplayItems = () => {
     const foldersSet = new Set<string>();
@@ -130,6 +164,33 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     return [...folderItems, ...fileItems.map((f) => ({ isFolder: false, ...f }))];
   };
 
+  const handleOpenFile = async (item: FileItem) => {
+    const cfg = await getSavedConfig();
+    if (!cfg) return;
+
+    const fileExt = item.filename.split(".").pop()?.toLowerCase() || "";
+    const isImage = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp"].includes(fileExt);
+    const isPdf = fileExt === "pdf";
+
+    const viewUrl = `${cfg.serverUrl}/api/files/download?filePath=${encodeURIComponent(item.path)}&inline=1`;
+
+    if (isImage) {
+      setSelectedFile(item);
+      setPreviewImageUrl(viewUrl);
+      setIsImageLoading(true);
+      setIsImagePreviewVisible(true);
+    } else if (isPdf) {
+      try {
+        await Linking.openURL(viewUrl);
+      } catch (err) {
+        Alert.alert("PDF Öffnen", "PDF konnte nicht im Browser geöffnet werden.");
+      }
+    } else {
+      setSelectedFile(item);
+      setIsActionModalVisible(true);
+    }
+  };
+
   const handleShareLink = async (filePath: string, ttlHours: number | null, isFolder = false) => {
     try {
       const url = await generateShareLink(filePath, ttlHours, isFolder);
@@ -143,9 +204,29 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     }
   };
 
+  const handleMoveItem = async (targetFolderPath: string) => {
+    if (!selectedFile) return;
+
+    try {
+      setIsMoveModalVisible(false);
+      setIsActionModalVisible(false);
+      const sourcePath = selectedFile.path;
+      
+      const success = await moveFileOnVPS(sourcePath, targetFolderPath);
+      if (success) {
+        await loadData();
+        Alert.alert("Erfolg", `Erfolgreich nach "${targetFolderPath || 'Hauptverzeichnis'}" verschoben.`);
+      } else {
+        Alert.alert("Fehler", "Verschieben fehlgeschlagen.");
+      }
+    } catch (err: any) {
+      Alert.alert("Fehler beim Verschieben", err?.message || "Verschieben fehlgeschlagen");
+    }
+  };
+
   const handleDelete = (filePath: string) => {
     Alert.alert(
-      "Datei löschen",
+      "Löschen bestätigen",
       `Möchtest du "${filePath.split("/").pop()}" wirklich unwiderruflich löschen?`,
       [
         { text: "Abbrechen", style: "cancel" },
@@ -154,6 +235,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           style: "destructive",
           onPress: async () => {
             setIsActionModalVisible(false);
+            setIsImagePreviewVisible(false);
             await deleteFileFromVPS(filePath);
             loadData();
           },
@@ -168,6 +250,10 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         <TouchableOpacity
           style={styles.itemCard}
           onPress={() => setCurrentFolder(item.path)}
+          onLongPress={() => {
+            setSelectedFile(item);
+            setIsMoveModalVisible(true);
+          }}
           activeOpacity={0.7}
         >
           <View style={styles.iconContainerFolder}>
@@ -175,9 +261,17 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           </View>
           <View style={styles.itemInfo}>
             <Text style={styles.itemName}>{item.name}</Text>
-            <Text style={styles.itemMeta}>Ordner</Text>
+            <Text style={styles.itemMeta}>Ordner • Tippen/Halten zum Verschieben</Text>
           </View>
-          <ChevronRight size={20} color="#64748B" />
+          <TouchableOpacity
+            style={{ padding: 10 }}
+            onPress={() => {
+              setSelectedFile(item);
+              setIsActionModalVisible(true);
+            }}
+          >
+            <MoreVertical size={20} color="#94A3B8" />
+          </TouchableOpacity>
         </TouchableOpacity>
       );
     }
@@ -188,17 +282,28 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
+    const fileExt = item.filename.split(".").pop()?.toLowerCase() || "";
+    const isImage = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp"].includes(fileExt);
+    const isPdf = fileExt === "pdf";
+
     return (
       <TouchableOpacity
         style={styles.itemCard}
-        onPress={() => {
+        onPress={() => handleOpenFile(item)}
+        onLongPress={() => {
           setSelectedFile(item);
-          setIsActionModalVisible(true);
+          setIsMoveModalVisible(true);
         }}
         activeOpacity={0.7}
       >
-        <View style={styles.iconContainerFile}>
-          <FileText size={22} color="#38BDF8" strokeWidth={2} />
+        <View style={isImage ? styles.iconContainerImage : styles.iconContainerFile}>
+          {isImage ? (
+            <Eye size={22} color="#A855F7" strokeWidth={2} />
+          ) : isPdf ? (
+            <FileText size={22} color="#EF4444" strokeWidth={2} />
+          ) : (
+            <FileText size={22} color="#38BDF8" strokeWidth={2} />
+          )}
         </View>
         <View style={styles.itemInfo}>
           <Text style={styles.itemName} numberOfLines={1}>
@@ -208,7 +313,15 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
             {formatSize(item.size)} • {new Date(item.updatedAt).toLocaleDateString("de-DE")}
           </Text>
         </View>
-        <MoreVertical size={20} color="#64748B" />
+        <TouchableOpacity
+          style={{ padding: 10 }}
+          onPress={() => {
+            setSelectedFile(item);
+            setIsActionModalVisible(true);
+          }}
+        >
+          <MoreVertical size={20} color="#94A3B8" />
+        </TouchableOpacity>
       </TouchableOpacity>
     );
   };
@@ -216,7 +329,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   const statusBarHeight = Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0B1120" translucent />
 
       {/* Header Bar */}
@@ -304,74 +417,222 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         }
       />
 
-      {/* File Action Sheet Modal */}
-      <Modal
-        visible={isActionModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsActionModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsActionModalVisible(false)}
+      {/* Fullscreen Image Preview Modal */}
+      {selectedFile && previewImageUrl && (
+        <Modal
+          visible={isImagePreviewVisible}
+          transparent
+          statusBarTranslucent
+          animationType="fade"
+          onRequestClose={() => setIsImagePreviewVisible(false)}
         >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <FileText size={22} color="#38BDF8" strokeWidth={2} style={{ marginRight: 10 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle} numberOfLines={1}>{selectedFile?.filename}</Text>
-                <Text style={styles.modalSubtitle}>Freigabe & Aktionen auswählen</Text>
-              </View>
+          <View style={styles.imagePreviewContainer}>
+            {/* Header */}
+            <View style={[styles.imagePreviewHeader, { paddingTop: statusBarHeight + 12 }]}>
+              <Text style={styles.imagePreviewTitle} numberOfLines={1}>
+                {selectedFile.filename}
+              </Text>
+              <TouchableOpacity
+                style={styles.closeBtn}
+                onPress={() => setIsImagePreviewVisible(false)}
+              >
+                <X size={24} color="#F8FAFC" />
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={styles.actionBtn}
-              activeOpacity={0.8}
-              onPress={() => selectedFile && handleShareLink(selectedFile.path, 24)}
-            >
-              <Clock size={18} color="#F38020" strokeWidth={2} style={{ marginRight: 12 }} />
-              <Text style={styles.actionBtnText}>Freigabelink (24 Std. Ablauf)</Text>
-            </TouchableOpacity>
+            {/* Image Container */}
+            <View style={styles.imageBody}>
+              {isImageLoading && (
+                <ActivityIndicator size="large" color="#F38020" style={StyleSheet.absoluteFill} />
+              )}
+              <Image
+                source={{ uri: previewImageUrl }}
+                style={styles.fullImage}
+                resizeMode="contain"
+                onLoadEnd={() => setIsImageLoading(false)}
+                onError={() => {
+                  setIsImageLoading(false);
+                  Alert.alert("Fehler", "Bild konnte nicht geladen werden.");
+                }}
+              />
+            </View>
 
-            <TouchableOpacity
-              style={styles.actionBtn}
-              activeOpacity={0.8}
-              onPress={() => selectedFile && handleShareLink(selectedFile.path, 168)}
-            >
-              <Clock size={18} color="#38BDF8" strokeWidth={2} style={{ marginRight: 12 }} />
-              <Text style={styles.actionBtnText}>Freigabelink (7 Tage Ablauf)</Text>
-            </TouchableOpacity>
+            {/* Action Bar */}
+            <View style={styles.imagePreviewFooter}>
+              <TouchableOpacity
+                style={styles.imagePreviewActionBtn}
+                onPress={() => handleShareLink(selectedFile.path, 24)}
+              >
+                <Share2 size={18} color="#38BDF8" style={{ marginRight: 8 }} />
+                <Text style={styles.imagePreviewActionText}>Teilen</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionBtn}
-              activeOpacity={0.8}
-              onPress={() => selectedFile && handleShareLink(selectedFile.path, null)}
-            >
-              <InfinityIcon size={18} color="#A855F7" strokeWidth={2} style={{ marginRight: 12 }} />
-              <Text style={styles.actionBtnText}>Dauerhaften Freigabelink</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.deleteBtn]}
-              activeOpacity={0.8}
-              onPress={() => selectedFile && handleDelete(selectedFile.path)}
-            >
-              <Trash2 size={18} color="#FCA5A5" strokeWidth={2} style={{ marginRight: 12 }} />
-              <Text style={[styles.actionBtnText, styles.deleteBtnText]}>Datei löschen</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              activeOpacity={0.8}
-              onPress={() => setIsActionModalVisible(false)}
-            >
-              <Text style={styles.cancelBtnText}>Abbrechen</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.imagePreviewActionBtn, styles.deleteBtn]}
+                onPress={() => handleDelete(selectedFile.path)}
+              >
+                <Trash2 size={18} color="#FCA5A5" style={{ marginRight: 8 }} />
+                <Text style={[styles.imagePreviewActionText, styles.deleteBtnText]}>Löschen</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </TouchableOpacity>
-      </Modal>
-    </SafeAreaView>
+        </Modal>
+      )}
+
+      {/* File Action Sheet Modal */}
+      {selectedFile && (
+        <Modal
+          visible={isActionModalVisible}
+          transparent
+          statusBarTranslucent
+          animationType="fade"
+          onRequestClose={() => setIsActionModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setIsActionModalVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1} style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                {selectedFile.isFolder ? (
+                  <Folder size={22} color="#F38020" strokeWidth={2} style={{ marginRight: 10 }} />
+                ) : (
+                  <FileText size={22} color="#38BDF8" strokeWidth={2} style={{ marginRight: 10 }} />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalTitle} numberOfLines={1}>
+                    {selectedFile.filename || selectedFile.name}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>Freigabe & Aktionen auswählen</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.8}
+                onPress={() => {
+                  setIsActionModalVisible(false);
+                  setIsMoveModalVisible(true);
+                }}
+              >
+                <FolderInput size={18} color="#F38020" strokeWidth={2} style={{ marginRight: 12 }} />
+                <Text style={styles.actionBtnText}>In Ordner verschieben...</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.8}
+                onPress={() => handleShareLink(selectedFile.path, 24, selectedFile.isFolder)}
+              >
+                <Clock size={18} color="#38BDF8" strokeWidth={2} style={{ marginRight: 12 }} />
+                <Text style={styles.actionBtnText}>Freigabelink (24 Std. Ablauf)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.8}
+                onPress={() => handleShareLink(selectedFile.path, 168, selectedFile.isFolder)}
+              >
+                <Clock size={18} color="#38BDF8" strokeWidth={2} style={{ marginRight: 12 }} />
+                <Text style={styles.actionBtnText}>Freigabelink (7 Tage Ablauf)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.8}
+                onPress={() => handleShareLink(selectedFile.path, null, selectedFile.isFolder)}
+              >
+                <InfinityIcon size={18} color="#A855F7" strokeWidth={2} style={{ marginRight: 12 }} />
+                <Text style={styles.actionBtnText}>Dauerhaften Freigabelink</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.deleteBtn]}
+                activeOpacity={0.8}
+                onPress={() => handleDelete(selectedFile.path)}
+              >
+                <Trash2 size={18} color="#FCA5A5" strokeWidth={2} style={{ marginRight: 12 }} />
+                <Text style={[styles.actionBtnText, styles.deleteBtnText]}>Löschen</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                activeOpacity={0.8}
+                onPress={() => setIsActionModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Abbrechen</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Move Target Folder Selector Modal */}
+      {selectedFile && (
+        <Modal
+          visible={isMoveModalVisible}
+          transparent
+          statusBarTranslucent
+          animationType="fade"
+          onRequestClose={() => setIsMoveModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setIsMoveModalVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1} style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <FolderInput size={22} color="#F38020" strokeWidth={2} style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalTitle}>In Ordner verschieben</Text>
+                  <Text style={styles.modalSubtitle} numberOfLines={1}>
+                    "{selectedFile.filename || selectedFile.name}" wird verschoben nach:
+                  </Text>
+                </View>
+              </View>
+
+              <FlatList
+                data={getAllAvailableFolders()}
+                keyExtractor={(f) => f || "root"}
+                style={{ maxHeight: 280, marginBottom: 12 }}
+                renderItem={({ item: folderPath }) => {
+                  const isRoot = folderPath === "";
+                  const displayName = isRoot ? "Hauptverzeichnis (Root)" : folderPath;
+
+                  return (
+                    <TouchableOpacity
+                      style={styles.folderSelectItem}
+                      activeOpacity={0.7}
+                      onPress={() => handleMoveItem(folderPath)}
+                    >
+                      {isRoot ? (
+                        <Home size={18} color="#F38020" strokeWidth={2} style={{ marginRight: 12 }} />
+                      ) : (
+                        <Folder size={18} color="#38BDF8" strokeWidth={2} style={{ marginRight: 12 }} />
+                      )}
+                      <Text style={styles.folderSelectText} numberOfLines={1}>
+                        {displayName}
+                      </Text>
+                      <ChevronRight size={16} color="#64748B" />
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                activeOpacity={0.8}
+                onPress={() => setIsMoveModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Abbrechen</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+    </View>
   );
 };
 
@@ -504,6 +765,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
+  iconContainerImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#A855F715",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
   itemInfo: {
     flex: 1,
   },
@@ -528,16 +798,24 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
   },
   modalContent: {
+    width: "100%",
+    maxWidth: 480,
     backgroundColor: "#1E293B",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderRadius: 24,
     padding: 22,
     borderWidth: 1,
     borderColor: "#334155",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
   },
   modalHeader: {
     flexDirection: "row",
@@ -570,6 +848,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
+  folderSelectItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#0F172A",
+    borderColor: "#334155",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
+  folderSelectText: {
+    color: "#F8FAFC",
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
+  },
   deleteBtn: {
     borderColor: "#EF444450",
     backgroundColor: "#EF444415",
@@ -586,5 +881,57 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     fontSize: 15,
     fontWeight: "600",
+  },
+  imagePreviewContainer: {
+    flex: 1,
+    backgroundColor: "#000000",
+  },
+  imagePreviewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+  },
+  imagePreviewTitle: {
+    color: "#F8FAFC",
+    fontSize: 16,
+    fontWeight: "700",
+    flex: 1,
+    marginRight: 16,
+  },
+  closeBtn: {
+    padding: 6,
+  },
+  imageBody: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullImage: {
+    width: "100%",
+    height: "100%",
+  },
+  imagePreviewFooter: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    padding: 20,
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+  },
+  imagePreviewActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1E293B",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#334155",
+  },
+  imagePreviewActionText: {
+    color: "#F8FAFC",
+    fontWeight: "600",
+    fontSize: 14,
   },
 });

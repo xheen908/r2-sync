@@ -156,6 +156,19 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
   return false;
 }
 
+export async function moveFileOnVPS(sourcePath: string, targetFolderPath: string): Promise<boolean> {
+  const cfg = await getSavedConfig();
+  if (!cfg) throw new Error("Nicht angemeldet");
+
+  const response = await fetch(`${cfg.serverUrl}/api/files/move`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sourcePath, targetFolderPath }),
+  });
+
+  return response.ok;
+}
+
 export async function deleteFileFromVPS(filePath: string): Promise<boolean> {
   const cfg = await getSavedConfig();
   if (!cfg) throw new Error("Nicht angemeldet");

@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const filePath = url.searchParams.get("filePath");
+  const isInline = url.searchParams.get("inline") === "1";
 
   if (!filePath) {
     return NextResponse.json({ error: "filePath parameter is required" }, { status: 400 });
@@ -28,7 +29,9 @@ export async function GET(request: Request) {
     const stream = res.Body.transformToWebStream();
     const headers = new Headers();
     headers.set("Content-Type", res.ContentType || "application/octet-stream");
-    headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+    
+    const dispositionType = isInline ? "inline" : "attachment";
+    headers.set("Content-Disposition", `${dispositionType}; filename="${encodeURIComponent(filename)}"`);
 
     return new Response(stream, { headers });
   } catch (err) {
