@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system";
 
 export interface FileItem {
   id: string;
@@ -100,23 +101,26 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
   const cfg = await getSavedConfig();
   if (!cfg) throw new Error("Nicht angemeldet");
 
-  const formData = new FormData();
-  const filename = targetPath.split("/").pop() || "upload.jpg";
+  const folderPath = targetPath.includes("/") ? targetPath.substring(0, targetPath.lastIndexOf("/")) : "";
 
-  // @ts-ignore
-  formData.append("file", {
-    uri: fileUri,
-    name: filename,
-    type: mimeType || "image/jpeg",
-  });
-  formData.append("folderPath", targetPath.includes("/") ? targetPath.substring(0, targetPath.lastIndexOf("/")) : "");
-
-  const response = await fetch(`${cfg.serverUrl}/api/files/upload`, {
-    method: "POST",
-    body: formData,
-  });
-
-  return response.ok;
+  try {
+    const uploadResult = await FileSystem.uploadAsync(
+      `${cfg.serverUrl}/api/files/upload`,
+      fileUri,
+      {
+        httpMethod: "POST",
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: "file",
+        parameters: {
+          folderPath: folderPath,
+        },
+      }
+    );
+    return uploadResult.status >= 200 && uploadResult.status < 300;
+  } catch (err) {
+    console.warn("FileSystem upload error:", err);
+    return false;
+  }
 }
 
 export async function deleteFileFromVPS(filePath: string): Promise<boolean> {

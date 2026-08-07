@@ -30,9 +30,8 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
     const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
 
-    // Fetch recent photos from Camera Roll
+    // Fetch recent photos/videos from Camera Roll
     const assetsResult = await MediaLibrary.getAssetsAsync({
-      mediaType: "photo",
       first: 100,
     });
 
@@ -42,7 +41,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     });
 
     if (newAssets.length === 0) {
-      const msg = assetsList.length === 0 ? "Keine Fotos auf dem Gerät gefunden" : "Fotogalerie ist aktuell";
+      const msg = assetsList.length === 0 ? "Keine Fotos im Telefonspeicher" : "Fotogalerie ist aktuell";
       onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: msg });
       return 0;
     }
@@ -65,7 +64,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         const uri = assetInfo.localUri || asset.uri;
         const assetTime = asset.creationTime || asset.modificationTime || Date.now();
 
-        // Target path: Kamera-Uploads/YYYY-MM/filename.jpg
+        // Target path e.g.: Kamera-Uploads/2026-08/filename.jpg
         const date = new Date(assetTime);
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
         const filename = asset.filename || `photo_${asset.id}.jpg`;
