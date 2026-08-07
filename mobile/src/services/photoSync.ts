@@ -43,12 +43,15 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
     const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
 
-    // Fetch recent photos/videos from Camera Roll
+    // Fetch recent photos/videos from Camera Roll sorted by creation time
     const assetsResult = await MediaLibrary.getAssetsAsync({
       first: 100,
+      sortBy: [MediaLibrary.SortBy.creationTime],
     });
 
     const assetsList = assetsResult.assets || [];
+    console.log(`[PhotoSync] Total camera roll assets found: ${assetsList.length}`);
+
     const newAssets = assetsList.filter((asset) => {
       return asset && asset.id && !syncedIdsSet.has(asset.id);
     });
@@ -83,6 +86,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         const filename = asset.filename || `photo_${asset.id}.jpg`;
         const targetPath = `Kamera-Uploads/${monthStr}/${filename}`;
 
+        console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) to ${targetPath}...`);
         const uploaded = await uploadFileToVPS(uri, targetPath, "image/jpeg");
         if (uploaded) {
           successCount++;
