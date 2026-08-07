@@ -618,10 +618,7 @@ export default function DashboardPage() {
 
           {/* R2 Connection Pill Badge */}
           <div
-            onClick={(e) => {
-              e.stopPropagation();
-              setR2SettingsModalOpen(true);
-            }}
+            onClick={() => router.push("/settings")}
             className={`cursor-pointer hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
               isConnected
                 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
@@ -695,7 +692,7 @@ export default function DashboardPage() {
                 <button
                   onClick={() => {
                     setPopoverOpen(false);
-                    setR2SettingsModalOpen(true);
+                    router.push("/settings");
                   }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-800 text-slate-200 hover:text-white transition-colors text-left font-medium"
                 >
@@ -706,7 +703,7 @@ export default function DashboardPage() {
                 <button
                   onClick={() => {
                     setPopoverOpen(false);
-                    setAccountModalOpen(true);
+                    router.push("/settings");
                   }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-800 text-slate-200 hover:text-white transition-colors text-left font-medium"
                 >
