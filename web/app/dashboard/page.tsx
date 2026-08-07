@@ -158,8 +158,8 @@ export default function DashboardPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
-  const fetchFiles = async () => {
-    setLoading(true);
+  const fetchFiles = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch("/api/files");
       if (res.status === 401) {
@@ -173,7 +173,7 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to fetch files", err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -199,6 +199,13 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchFiles();
     fetchSettings();
+
+    // Live Real-Time Polling every 3 seconds for zero-flicker UI updates
+    const pollInterval = setInterval(() => {
+      fetchFiles(true);
+    }, 3000);
+
+    return () => clearInterval(pollInterval);
   }, []);
 
   useEffect(() => {
