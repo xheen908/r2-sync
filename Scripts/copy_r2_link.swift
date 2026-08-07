@@ -24,6 +24,12 @@ let rootURL = URL(fileURLWithPath: syncFolderPath)
 var relativePath = String(fileURL.path.dropFirst(rootURL.path.count))
 if relativePath.hasPrefix("/") { relativePath = String(relativePath.dropFirst()) }
 
+// Check if item is a folder or a file
+var isDirectory: ObjCBool = false
+FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
+let isFolder = isDirectory.boolValue
+let itemTypeLabel = isFolder ? "Ordner" : "Datei"
+
 // If TTL provided via command line argument, use it; otherwise pop up native GUI selection dialog for duration!
 var ttlHours: Int? = 24
 
@@ -32,8 +38,8 @@ if CommandLine.arguments.count > 2, let parsed = Int(CommandLine.arguments[2]) {
 } else {
     // Pop up native macOS selection dialog for duration
     let alert = NSAlert()
-    alert.messageText = "R2 Freigabelink erstellen"
-    alert.informativeText = "Wähle die Ablaufzeit für:\n\"\(fileURL.lastPathComponent)\""
+    alert.messageText = "R2 \(itemTypeLabel)-Freigabelink erstellen"
+    alert.informativeText = "Wähle die Ablaufzeit für den \(itemTypeLabel):\n\"\(fileURL.lastPathComponent)\""
     alert.alertStyle = .informational
 
     alert.addButton(withTitle: "24 Stunden")              // Button 1 (Default)
@@ -63,12 +69,9 @@ var request = URLRequest(url: apiURL)
 request.httpMethod = "POST"
 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-var isDirectory: ObjCBool = false
-FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
-
 let payload: [String: Any?] = [
     "filePath": relativePath,
-    "isFolder": isDirectory.boolValue,
+    "isFolder": isFolder,
     "ttlHours": ttlHours
 ]
 
@@ -96,4 +99,4 @@ pasteboard.clearContents()
 pasteboard.declareTypes([.string], owner: nil)
 pasteboard.setString(generatedShareURL, forType: .string)
 
-print("COPIED R2 SHARE LINK:", generatedShareURL)
+print("COPIED R2 SHARE LINK FOR \(itemTypeLabel.uppercased()):", generatedShareURL)
