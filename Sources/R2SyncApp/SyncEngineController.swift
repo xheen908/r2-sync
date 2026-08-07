@@ -152,6 +152,37 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
 
     // MARK: - 2-Way Synchronization Engine (Remote <-> Local)
 
+    struct WebFileItem: Codable {
+        let id: String
+        let path: String
+        let filename: String
+        let size: Int64
+        let etag: String?
+        let updatedAt: Int64
+    }
+
+    struct APIResponse: Codable {
+        let files: [WebFileItem]
+        let deletedFiles: [String]?
+    }
+
+    private func fetchRemoteStateFromDB() async -> (files: [WebFileItem], deletedFiles: [String]) {
+        let domain = config.publicDomainURL.isEmpty ? "https://drive.ocpp-labs.com" : config.publicDomainURL
+        let cleanDomain = domain.hasSuffix("/") ? String(domain.dropLast()) : domain
+        guard let url = URL(string: "\(cleanDomain)/api/files") else { return ([], []) }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200 {
+                let res = try JSONDecoder().decode(APIResponse.self, from: data)
+                return (res.files, res.deletedFiles ?? [])
+            }
+        } catch {
+            print("[SyncEngineController] Failed to fetch files from DB API: \(error)")
+        }
+        return ([], [])
+    }
+
     private func performFullTwoWaySync() async {
         guard !isPerformingFullSync else { return }
         isPerformingFullSync = true
@@ -161,28 +192,49 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
         let fileManager = FileManager.default
 
         do {
-            // 1. Fetch remote items from Cloudflare R2 Bucket
-            let remoteItems = try await storageService.listBucketObjects(bucketName: config.bucketName)
-            let remoteKeysSet = Set(remoteItems.map { $0.key })
+            // 1. Fetch remote state (active files & deleted files list)
+            let remoteState = await fetchRemoteStateFromDB()
+            let remoteFiles = remoteState.files
+            let deletedPaths = Set(remoteState.deletedFiles)
+            let remoteMap = Dictionary(uniqueKeysWithValues: remoteFiles.map { ($0.path, $0) })
 
-            // 2. REMOTE -> LOCAL: Download files present in R2 but missing locally
-            for item in remoteItems {
-                let localURL = rootURL.appendingPathComponent(item.key)
-                if !fileManager.fileExists(atPath: localURL.path) {
-                    print("[SyncEngineController] New remote file detected: \(item.key). Downloading to Mac...")
+            // 2. REMOTE DELETION -> LOCAL: Delete local files that were marked as deleted in DB
+            for deletedKey in deletedPaths {
+                let localURL = rootURL.appendingPathComponent(deletedKey)
+                if fileManager.fileExists(atPath: localURL.path) {
+                    print("[SyncEngineController] File marked as deleted in Web UI: \(deletedKey). Deleting locally on Mac...")
+                    try? fileManager.removeItem(at: localURL)
+                }
+            }
+
+            // 3. REMOTE -> LOCAL: Download files present in DB but missing locally
+            for item in remoteFiles {
+                let localURL = rootURL.appendingPathComponent(item.path)
+                var shouldDownload = !fileManager.fileExists(atPath: localURL.path)
+
+                if !shouldDownload {
+                    if let attrs = try? fileManager.attributesOfItem(atPath: localURL.path),
+                       let fileSize = attrs[.size] as? Int64,
+                       fileSize != item.size {
+                        shouldDownload = true
+                    }
+                }
+
+                if shouldDownload {
+                    print("[SyncEngineController] Remote file sync needed for: \(item.path). Downloading to Mac...")
                     DispatchQueue.main.async {
                         self.isSyncing = true
-                        self.activeTransfers.append(TransferItem(filename: item.key, progress: 0.5, isUpload: false))
+                        self.activeTransfers.append(TransferItem(filename: item.path, progress: 0.5, isUpload: false))
                     }
-                    try? await storageService.downloadFile(relativePath: item.key, bucketName: config.bucketName, destinationURL: localURL)
+                    try? await storageService.downloadFile(relativePath: item.path, bucketName: config.bucketName, destinationURL: localURL)
                     DispatchQueue.main.async {
-                        self.activeTransfers.removeAll(where: { $0.filename == item.key })
+                        self.activeTransfers.removeAll(where: { $0.filename == item.path })
                         if self.activeTransfers.isEmpty { self.isSyncing = false }
                     }
                 }
             }
 
-            // 3. LOCAL -> REMOTE SYNC: Upload local files missing in R2 (instead of deleting them locally)
+            // 4. LOCAL -> REMOTE SYNC: Upload local files missing in DB (unless explicitly deleted in Web UI)
             if let enumerator = fileManager.enumerator(at: rootURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
                 for case let localFileURL as URL in enumerator {
                     var isDirectory: ObjCBool = false
@@ -198,9 +250,22 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
                                         relPath.hasSuffix(".download") ||
                                         relPath.hasSuffix(".part")
 
-                        if !isIgnored && !remoteKeysSet.contains(relPath) {
-                            print("[SyncEngineController] New local file detected during sync: \(relPath). Uploading to R2...")
-                            await processLocalUpload(fileURL: localFileURL, relativePath: relPath)
+                        if !isIgnored && !deletedPaths.contains(relPath) {
+                            var needsUpload = false
+                            if let remoteItem = remoteMap[relPath] {
+                                if let attrs = try? fileManager.attributesOfItem(atPath: localFileURL.path),
+                                   let localSize = attrs[.size] as? Int64,
+                                   localSize != remoteItem.size {
+                                    needsUpload = true
+                                }
+                            } else {
+                                needsUpload = true
+                            }
+
+                            if needsUpload {
+                                print("[SyncEngineController] New/Modified local file detected: \(relPath). Uploading...")
+                                await processLocalUpload(fileURL: localFileURL, relativePath: relPath)
+                            }
                         }
                     }
                 }

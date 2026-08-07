@@ -21,26 +21,32 @@ export async function POST(request: Request) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Upload to Cloudflare R2
+    // Calculate MD5 hash for ETag tracking
+    const crypto = await import("crypto");
+    const etag = crypto.createHash("md5").update(buffer).digest("hex");
+
+    // Upload to Cloudflare R2 with Cache-Control header for Edge CDN caching
     const putCmd = new PutObjectCommand({
       Bucket: r2BucketName,
       Key: key,
       Body: buffer,
       ContentType: file.type || "application/octet-stream",
+      CacheControl: "public, max-age=31536000, immutable",
     });
     await s3Client.send(putCmd);
 
     const now = Date.now();
     const fileId = `f_${Math.random().toString(36).substring(2)}`;
 
-    // Insert into SQLite DB
+    // Insert or replace into SQLite DB
     try {
       const { getDb } = await import("@/lib/db");
       const db = await getDb();
       await db.run(
-        `INSERT OR REPLACE INTO files (id, path, filename, size, mime_type, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-        [fileId, key, file.name, file.size, file.type || "application/octet-stream", now]
+        `INSERT OR REPLACE INTO files (id, path, filename, size, etag, mime_type, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [fileId, key, file.name, file.size, etag, file.type || "application/octet-stream", now]
       );
+      await db.run("DELETE FROM deleted_files WHERE path = ?", [key]);
     } catch (dbErr) {
       console.warn("Upload API: SQLite insert failed:", dbErr);
     }

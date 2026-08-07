@@ -67,6 +67,14 @@ export async function getDb(): Promise<Database> {
         updated_at INTEGER NOT NULL
     );
 
+    CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
+    CREATE INDEX IF NOT EXISTS idx_files_updated_at ON files(updated_at);
+
+    CREATE TABLE IF NOT EXISTS deleted_files (
+        path TEXT PRIMARY KEY,
+        deleted_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS share_links (
         id TEXT PRIMARY KEY,
         file_path TEXT NOT NULL,

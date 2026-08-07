@@ -2,6 +2,7 @@ import Foundation
 import AWSS3
 import ClientRuntime
 import AWSClientRuntime
+import CryptoKit
 
 struct RemoteStorageItem {
     let key: String
@@ -46,6 +47,7 @@ final class R2StorageService {
         let input = PutObjectInput(
             body: stream,
             bucket: bucketName,
+            cacheControl: "public, max-age=31536000, immutable",
             key: relativePath
         )
 

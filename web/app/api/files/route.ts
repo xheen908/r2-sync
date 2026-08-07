@@ -4,73 +4,73 @@ import { ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   let files: any[] = [];
   let activeCounts: Record<string, number> = {};
-  let r2FilesMap = new Map<string, { size: number; etag: string; updatedAt: number }>();
 
-  // 1. Fetch live object listing directly from Cloudflare R2 Bucket
-  try {
-    const { s3Client, bucketName } = await getS3Client();
-    const command = new ListObjectsV2Command({ Bucket: bucketName });
-    const res = await s3Client.send(command);
+  const url = new URL(request.url);
+  const forceSync = url.searchParams.get("forceSync") === "true";
 
-    if (res.Contents) {
-      for (const item of res.Contents) {
-        if (item.Key && !item.Key.startsWith(".shares/")) {
-          r2FilesMap.set(item.Key, {
-            size: item.Size || 0,
-            etag: item.ETag || "",
-            updatedAt: item.LastModified ? new Date(item.LastModified).getTime() : Date.now(),
-          });
+  // 1. If forceSync is explicitly requested, perform a full reconciliation scan against Cloudflare R2
+  if (forceSync) {
+    let r2FilesMap = new Map<string, { size: number; etag: string; updatedAt: number }>();
+    try {
+      const { s3Client, bucketName } = await getS3Client();
+      const command = new ListObjectsV2Command({ Bucket: bucketName });
+      const res = await s3Client.send(command);
+
+      if (res.Contents) {
+        for (const item of res.Contents) {
+          if (item.Key && !item.Key.startsWith(".shares/")) {
+            r2FilesMap.set(item.Key, {
+              size: item.Size || 0,
+              etag: item.ETag ? item.ETag.replace(/"/g, "") : "",
+              updatedAt: item.LastModified ? new Date(item.LastModified).getTime() : Date.now(),
+            });
+          }
         }
       }
+
+      const { getDb } = await import("@/lib/db");
+      const db = await getDb();
+      const dbFiles = await db.all("SELECT * FROM files");
+      const dbPathSet = new Set<string>();
+
+      for (const f of dbFiles) {
+        if (r2FilesMap.has(f.path)) {
+          dbPathSet.add(f.path);
+        } else {
+          await db.run("DELETE FROM files WHERE path = ?", [f.path]);
+          await db.run("DELETE FROM share_links WHERE file_path = ?", [f.path]);
+        }
+      }
+
+      for (const [key, meta] of r2FilesMap.entries()) {
+        if (!dbPathSet.has(key)) {
+          const fileId = `f_${Math.random().toString(36).substring(2)}`;
+          const filename = key.split("/").pop() || key;
+          await db.run(
+            "INSERT OR REPLACE INTO files (id, path, filename, size, etag, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            [fileId, key, filename, meta.size, meta.etag, meta.updatedAt]
+          );
+        }
+      }
+    } catch (r2Err) {
+      console.warn("Files API: Force R2 sync failed:", r2Err);
     }
-  } catch (r2Err) {
-    console.warn("Files API: Live R2 scan failed:", r2Err);
   }
 
-  // 2. Sync with local SQLite Database
+  // 2. Fetch directly from SQLite DB (Source of Truth - Zero Class-A calls)
+  let deletedFiles: string[] = [];
   try {
     const { getDb } = await import("@/lib/db");
     const db = await getDb();
 
-    // A. Read existing files from DB
-    const dbFiles = await db.all("SELECT * FROM files ORDER BY updated_at DESC");
-    const dbPathSet = new Set<string>();
+    files = await db.all("SELECT * FROM files ORDER BY updated_at DESC");
 
-    for (const f of dbFiles) {
-      if (r2FilesMap.has(f.path)) {
-        dbPathSet.add(f.path);
-        files.push(f);
-      } else {
-        // File was deleted from R2 (e.g. via Mac App) -> remove stale record from SQLite DB
-        await db.run("DELETE FROM files WHERE path = ?", [f.path]);
-        await db.run("DELETE FROM share_links WHERE file_path = ?", [f.path]);
-      }
-    }
+    const deletedRows = await db.all("SELECT path FROM deleted_files");
+    deletedFiles = deletedRows.map((r: any) => r.path);
 
-    // B. Index new files from R2 into DB (e.g. uploaded via Mac App)
-    for (const [key, meta] of r2FilesMap.entries()) {
-      if (!dbPathSet.has(key)) {
-        const fileId = `f_${Math.random().toString(36).substring(2)}`;
-        const filename = key.split("/").pop() || key;
-        await db.run(
-          "INSERT OR REPLACE INTO files (id, path, filename, size, etag, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-          [fileId, key, filename, meta.size, meta.etag, meta.updatedAt]
-        );
-        files.push({
-          id: fileId,
-          path: key,
-          filename,
-          size: meta.size,
-          etag: meta.etag,
-          updated_at: meta.updatedAt,
-        });
-      }
-    }
-
-    // C. Calculate active share link counts per file
     const now = Date.now();
     const counts = await db.all(
       "SELECT file_path, COUNT(*) as count FROM share_links WHERE expires_at IS NULL OR expires_at > ? GROUP BY file_path",
@@ -80,19 +80,7 @@ export async function GET() {
       activeCounts[row.file_path] = row.count;
     }
   } catch (dbErr) {
-    console.warn("Files API: SQLite synchronization failed, serving R2 map directly:", dbErr);
-    if (files.length === 0) {
-      for (const [key, meta] of r2FilesMap.entries()) {
-        files.push({
-          id: `f_${Math.random().toString(36).substring(2)}`,
-          path: key,
-          filename: key.split("/").pop() || key,
-          size: meta.size,
-          etag: meta.etag,
-          updated_at: meta.updatedAt,
-        });
-      }
-    }
+    console.error("Files API: SQLite query failed:", dbErr);
   }
 
   const formattedFiles = files.map((f: any) => {
@@ -102,13 +90,14 @@ export async function GET() {
       path,
       filename: f.filename || (path ? path.split("/").pop() : "file"),
       size: f.size || f.Size || 0,
+      etag: f.etag || "",
       mimeType: f.mime_type || "application/octet-stream",
       updatedAt: f.updated_at || Date.now(),
       activeSharesCount: activeCounts[path] || 0,
     };
   });
 
-  return NextResponse.json({ files: formattedFiles });
+  return NextResponse.json({ files: formattedFiles, deletedFiles });
 }
 
 export async function DELETE(request: Request) {
@@ -149,12 +138,14 @@ export async function DELETE(request: Request) {
     console.warn("File delete API: R2 delete failed:", r2Err);
   }
 
-  // 2. Delete file record & associated share links from SQLite DB
+  // 2. Delete file record & associated share links from SQLite DB, and record in deleted_files table
   try {
     const { getDb } = await import("@/lib/db");
     const db = await getDb();
+    const now = Date.now();
     await db.run("DELETE FROM files WHERE path = ? OR path LIKE ?", [filePath, `${prefix}%`]);
     await db.run("DELETE FROM share_links WHERE file_path = ? OR file_path LIKE ?", [filePath, `${prefix}%`]);
+    await db.run("INSERT OR REPLACE INTO deleted_files (path, deleted_at) VALUES (?, ?)", [filePath, now]);
   } catch (dbErr) {
     console.warn("File delete API: SQLite record delete failed:", dbErr);
   }
