@@ -28,6 +28,7 @@ import {
   ExternalLink,
   Plus,
   List,
+  Download,
 } from "lucide-react";
 
 interface FileItem {
