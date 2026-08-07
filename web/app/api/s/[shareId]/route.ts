@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { s3Client, r2BucketName } from "@/lib/r2";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +43,7 @@ export async function GET(
           id: data.shareId,
           file_path: data.filePath,
           filename: data.filename,
+          isFolder: !!data.isFolder,
           expires_at: data.expiresAt,
           password_hash: data.passwordHash,
         };
@@ -60,11 +61,40 @@ export async function GET(
   }
 
   const isExpired = share.expires_at ? Date.now() > share.expires_at : false;
+  let folderFiles: any[] = [];
+
+  // Check if target is a folder
+  const isFolder = share.isFolder || (!share.filename.includes(".") && !share.file_path.includes("."));
+
+  if (isFolder && !isExpired) {
+    try {
+      const prefix = share.file_path.endsWith("/") ? share.file_path : `${share.file_path}/`;
+      const listCmd = new ListObjectsV2Command({
+        Bucket: r2BucketName,
+        Prefix: prefix,
+      });
+      const listRes = await s3Client.send(listCmd);
+      if (listRes.Contents) {
+        folderFiles = listRes.Contents
+          .filter((item) => item.Key && item.Key !== prefix && !item.Key.startsWith(".shares/"))
+          .map((item) => ({
+            path: item.Key,
+            filename: item.Key!.slice(prefix.length),
+            size: item.Size || 0,
+            updatedAt: item.LastModified ? new Date(item.LastModified).getTime() : Date.now(),
+          }));
+      }
+    } catch (err) {
+      console.warn("Folder share list error:", err);
+    }
+  }
 
   return NextResponse.json({
     shareId: share.id,
     filePath: share.file_path,
     filename: share.filename,
+    isFolder,
+    folderFiles,
     expiresAt: share.expires_at,
     requiresPassword: !!share.password_hash,
     expired: isExpired,

@@ -9,7 +9,7 @@ async function hashPassword(password: string): Promise<string> {
   return crypto.createHash("sha256").update(password).digest("hex");
 }
 
-// 1. GET /api/share?filePath=... -> List active share links for a file
+// 1. GET /api/share?filePath=... -> List active share links for a file or folder
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const filePath = url.searchParams.get("filePath");
@@ -108,11 +108,11 @@ export async function GET(request: Request) {
   return NextResponse.json({ shares: formattedShares });
 }
 
-// 2. POST /api/share -> Create new share link
+// 2. POST /api/share -> Create new share link (File or Folder)
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { filePath, ttlHours, password } = body;
+    const { filePath, isFolder, ttlHours, password } = body;
 
     if (!filePath) {
       return NextResponse.json(
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
     }
 
     const shareId = crypto.randomBytes(12).toString("hex");
-    const filename = filePath.split("/").pop() || "download";
+    const filename = filePath.split("/").filter(Boolean).pop() || "folder_share";
     const expiresAt = ttlHours ? Date.now() + ttlHours * 3600 * 1000 : null;
     const passwordHash = password ? await hashPassword(password) : null;
     const now = Date.now();
@@ -146,6 +146,7 @@ export async function POST(request: Request) {
         shareId,
         filePath,
         filename,
+        isFolder: !!isFolder,
         expiresAt,
         passwordHash,
         createdAt: now,
@@ -176,6 +177,7 @@ export async function POST(request: Request) {
       shareUrl,
       filePath,
       filename,
+      isFolder: !!isFolder,
       expiresAt,
       requiresPassword: !!passwordHash,
     });

@@ -8,15 +8,27 @@ import {
   Clock,
   Lock,
   FileText,
+  Folder,
   AlertTriangle,
   ShieldCheck,
   CheckCircle2,
   XCircle,
+  FolderOpen,
 } from "lucide-react";
+
+interface FolderFileItem {
+  path: string;
+  filename: string;
+  size: number;
+  updatedAt: number;
+}
 
 interface ShareInfo {
   shareId: string;
+  filePath: string;
   filename: string;
+  isFolder?: boolean;
+  folderFiles?: FolderFileItem[];
   expiresAt: number | null;
   requiresPassword?: boolean;
   expired?: boolean;
@@ -30,7 +42,7 @@ export default function PublicSharePage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [downloading, setDownloading] = useState(false);
+  const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
 
   useEffect(() => {
     if (!shareId) return;
@@ -53,8 +65,11 @@ export default function PublicSharePage() {
     loadShare();
   }, [shareId]);
 
-  const handleDownload = async () => {
-    setDownloading(true);
+  const handleDownloadFile = async (filePath?: string, customFilename?: string) => {
+    const targetPath = filePath || shareInfo?.filePath;
+    if (!targetPath) return;
+
+    setDownloadingFile(targetPath);
     setError("");
 
     try {
@@ -66,24 +81,31 @@ export default function PublicSharePage() {
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || "Download fehlgeschlagen");
-        setDownloading(false);
+        setDownloadingFile(null);
         return;
       }
 
-      // Trigger browser download
       const blob = await res.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
-      a.download = shareInfo?.filename || "download";
+      a.download = customFilename || shareInfo?.filename || "download";
       document.body.appendChild(a);
       a.click();
       a.remove();
     } catch (err) {
       setError("Fehler beim Herunterladen der Datei");
     } finally {
-      setDownloading(false);
+      setDownloadingFile(null);
     }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   const isExpired =
@@ -95,7 +117,7 @@ export default function PublicSharePage() {
       {/* Background Glow */}
       <div className="absolute top-1/3 left-1/3 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="w-full max-w-md bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 shadow-2xl z-10 text-center">
+      <div className="w-full max-w-xl bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 shadow-2xl z-10 text-center">
         {/* Header Logo */}
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-400 shadow-lg shadow-orange-500/20 mb-6">
           <Cloud className="w-8 h-8 text-white" />
@@ -123,8 +145,12 @@ export default function PublicSharePage() {
           <div className="space-y-6">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-mono mb-3 border border-slate-700">
-                <FileText className="w-3.5 h-3.5 text-orange-400" />
-                <span>Freigabe über R2Sync</span>
+                {shareInfo?.isFolder ? (
+                  <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                ) : (
+                  <FileText className="w-3.5 h-3.5 text-orange-400" />
+                )}
+                <span>{shareInfo?.isFolder ? "Freigegebener Ordner" : "Freigegebene Datei"}</span>
               </div>
               <h2 className="text-xl font-bold text-white tracking-tight break-all">
                 {shareInfo?.filename}
@@ -171,15 +197,43 @@ export default function PublicSharePage() {
               </p>
             )}
 
-            {/* Download Button */}
-            <button
-              onClick={handleDownload}
-              disabled={downloading}
-              className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold py-3 rounded-xl shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all active:scale-[0.99] disabled:opacity-50"
-            >
-              <Download className="w-5 h-5" />
-              <span>{downloading ? "Download läuft..." : "Datei Herunterladen"}</span>
-            </button>
+            {/* IF FOLDER SHARE: Render List of Files in Folder */}
+            {shareInfo?.isFolder && shareInfo.folderFiles && shareInfo.folderFiles.length > 0 ? (
+              <div className="space-y-3 text-left">
+                <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
+                  Enthaltene Dateien ({shareInfo.folderFiles.length})
+                </h3>
+                <div className="max-h-60 overflow-y-auto divide-y divide-slate-800 bg-slate-950/80 border border-slate-800 rounded-2xl">
+                  {shareInfo.folderFiles.map((file) => (
+                    <div key={file.path} className="p-3 flex items-center justify-between gap-3 hover:bg-slate-900/60 transition-colors">
+                      <div className="flex items-center gap-2.5 truncate">
+                        <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                        <span className="text-xs font-medium text-slate-200 truncate">{file.filename}</span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-[11px] font-mono text-slate-500">{formatBytes(file.size)}</span>
+                        <button
+                          onClick={() => handleDownloadFile(file.path, file.filename)}
+                          className="p-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs flex items-center gap-1 transition-all"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* IF SINGLE FILE SHARE: Render Single Download Button */
+              <button
+                onClick={() => handleDownloadFile()}
+                disabled={!!downloadingFile}
+                className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold py-3 rounded-xl shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all active:scale-[0.99] disabled:opacity-50"
+              >
+                <Download className="w-5 h-5" />
+                <span>{downloadingFile ? "Download läuft..." : "Datei Herunterladen"}</span>
+              </button>
+            )}
           </div>
         )}
 

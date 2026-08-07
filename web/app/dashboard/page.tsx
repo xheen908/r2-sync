@@ -840,6 +840,24 @@ export default function DashboardPage() {
                 <FolderOpen className="w-4 h-4 text-amber-400 group-hover:text-white" />
                 <span>Ordner öffnen</span>
               </button>
+
+              <button
+                onClick={() => {
+                  const folder = contextMenu.row as DirectoryRow;
+                  openShareModal({
+                    id: `folder_${folder.fullPath}`,
+                    path: folder.fullPath,
+                    filename: folder.name,
+                    size: 0,
+                    updatedAt: Date.now(),
+                  });
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors text-left font-medium"
+              >
+                <Share2 className="w-4 h-4 text-orange-400 group-hover:text-white" />
+                <span>Ordner freigeben...</span>
+              </button>
             </>
           )}
         </div>
