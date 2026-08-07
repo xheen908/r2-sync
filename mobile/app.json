@@ -2,7 +2,7 @@
   "expo": {
     "name": "R2Sync",
     "slug": "r2sync-mobile",
-    "version": "1.0.0",
+    "version": "0.1.53",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
