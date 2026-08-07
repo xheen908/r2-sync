@@ -10,6 +10,8 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
     private var watcher: FSEventsWatcher?
     private let storageService = R2StorageService()
     private var config: R2Config = R2Config.empty
+    private var syncTimer: Timer?
+    private var isPerformingFullSync = false
 
     private init() {}
 
@@ -38,69 +40,66 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
 
         print("[SyncEngineController] Engine started monitoring: \(config.syncFolderPath)")
 
-        // Perform initial recursive sync scan for existing folders & files
+        // Perform initial & periodic 2-Way Sync
         Task {
-            await syncDirectoryRecursively(directoryURL: URL(fileURLWithPath: config.syncFolderPath))
+            await performFullTwoWaySync()
+        }
+
+        // Timer for continuous 2-way remote synchronization every 10 seconds
+        DispatchQueue.main.async {
+            self.syncTimer?.invalidate()
+            self.syncTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+                Task {
+                    await self?.performFullTwoWaySync()
+                }
+            }
         }
     }
 
     func stopEngine() {
         watcher?.stop()
         watcher = nil
+        syncTimer?.invalidate()
+        syncTimer = nil
         print("[SyncEngineController] Engine stopped")
     }
 
-    // MARK: - FSEventsWatcherDelegate
+    // MARK: - FSEventsWatcherDelegate (Local Changes Detection)
 
     func fileSystemWatcher(_ watcher: FSEventsWatcher, didDetectChangeAt path: String, flags: FSEventStreamEventFlags) {
         print("[SyncEngineController] Change detected at path: \(path)")
         let url = URL(fileURLWithPath: path)
-
-        Task {
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
-                if isDirectory.boolValue {
-                    await syncDirectoryRecursively(directoryURL: url)
-                } else {
-                    await processSingleFile(fileURL: url)
-                }
-            }
-        }
-    }
-
-    // MARK: - Recursive Directory Sync Engine
-
-    private func syncDirectoryRecursively(directoryURL: URL) async {
         let rootURL = URL(fileURLWithPath: config.syncFolderPath)
-        let fileManager = FileManager.default
 
-        guard let enumerator = fileManager.enumerator(
-            at: directoryURL,
-            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
+        guard url.path.hasPrefix(rootURL.path) else { return }
 
-        for case let fileURL as URL in enumerator {
-            var isDirectory: ObjCBool = false
-            if fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory) {
-                if !isDirectory.boolValue {
-                    await processSingleFile(fileURL: fileURL)
-                }
-            }
-        }
-    }
-
-    private func processSingleFile(fileURL: URL) async {
-        let rootURL = URL(fileURLWithPath: config.syncFolderPath)
-        guard fileURL.path.hasPrefix(rootURL.path) else { return }
-
-        var relativePath = String(fileURL.path.dropFirst(rootURL.path.count))
+        var relativePath = String(url.path.dropFirst(rootURL.path.count))
         if relativePath.hasPrefix("/") {
             relativePath = String(relativePath.dropFirst())
         }
 
         guard !relativePath.isEmpty, !relativePath.hasPrefix("."), !relativePath.contains("/.") else { return }
 
+        Task {
+            var isDirectory: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+
+            if exists {
+                if isDirectory.boolValue {
+                    await syncDirectoryRecursively(directoryURL: url)
+                } else {
+                    await processLocalUpload(fileURL: url, relativePath: relativePath)
+                }
+            } else {
+                // FILE DELETED LOCALLY ON MAC -> DELETE IN R2 BUCKET & WEB DB
+                await processLocalDeletion(relativePath: relativePath)
+            }
+        }
+    }
+
+    // MARK: - Local Action Processors
+
+    private func processLocalUpload(fileURL: URL, relativePath: String) async {
         DispatchQueue.main.async {
             if !self.activeTransfers.contains(where: { $0.filename == relativePath }) {
                 self.isSyncing = true
@@ -114,6 +113,9 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
                 relativePath: relativePath,
                 bucketName: config.bucketName
             )
+
+            // Notify Web App to index in SQLite
+            await notifyWebSync(action: "upload", relativePath: relativePath)
 
             DispatchQueue.main.async {
                 self.activeTransfers.removeAll(where: { $0.filename == relativePath })
@@ -130,5 +132,101 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
                 }
             }
         }
+    }
+
+    private func processLocalDeletion(relativePath: String) async {
+        print("[SyncEngineController] Processing local deletion of \(relativePath)...")
+        do {
+            try await storageService.deleteFile(relativePath: relativePath, bucketName: config.bucketName)
+            await notifyWebSync(action: "delete", relativePath: relativePath)
+        } catch {
+            print("[SyncEngineController] Remote delete failed for \(relativePath): \(error)")
+        }
+    }
+
+    // MARK: - 2-Way Synchronization Engine (Remote <-> Local)
+
+    private func performFullTwoWaySync() async {
+        guard !isPerformingFullSync else { return }
+        isPerformingFullSync = true
+        defer { isPerformingFullSync = false }
+
+        let rootURL = URL(fileURLWithPath: config.syncFolderPath)
+        let fileManager = FileManager.default
+
+        do {
+            // 1. Fetch remote items from Cloudflare R2 Bucket
+            let remoteItems = try await storageService.listBucketObjects(bucketName: config.bucketName)
+            let remoteKeysSet = Set(remoteItems.map { $0.key })
+
+            // 2. REMOTE -> LOCAL: Download files present in R2 but missing locally
+            for item in remoteItems {
+                let localURL = rootURL.appendingPathComponent(item.key)
+                if !fileManager.fileExists(atPath: localURL.path) {
+                    print("[SyncEngineController] New remote file detected: \(item.key). Downloading to Mac...")
+                    DispatchQueue.main.async {
+                        self.isSyncing = true
+                        self.activeTransfers.append(TransferItem(filename: item.key, progress: 0.5, isUpload: false))
+                    }
+                    try? await storageService.downloadFile(relativePath: item.key, bucketName: config.bucketName, destinationURL: localURL)
+                    DispatchQueue.main.async {
+                        self.activeTransfers.removeAll(where: { $0.filename == item.key })
+                        if self.activeTransfers.isEmpty { self.isSyncing = false }
+                    }
+                }
+            }
+
+            // 3. LOCAL -> REMOTE DELETION SYNC: Delete local file if it was deleted in Web UI / R2 Bucket
+            if let enumerator = fileManager.enumerator(at: rootURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
+                for case let localFileURL as URL in enumerator {
+                    var isDirectory: ObjCBool = false
+                    if fileManager.fileExists(atPath: localFileURL.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+                        var relPath = String(localFileURL.path.dropFirst(rootURL.path.count))
+                        if relPath.hasPrefix("/") { relPath = String(relPath.dropFirst()) }
+                        
+                        if !relPath.isEmpty && !relPath.hasPrefix(".") && !relPath.contains("/.") {
+                            // If local file is missing remotely in R2 bucket, remove it from local filesystem
+                            if !remoteKeysSet.contains(relPath) {
+                                print("[SyncEngineController] File \(relPath) was deleted in Web/R2. Removing from local Mac filesystem...")
+                                try? fileManager.removeItem(at: localFileURL)
+                            }
+                        }
+                    }
+                }
+            }
+        } catch {
+            print("[SyncEngineController] Full 2-Way Sync failed: \(error)")
+        }
+    }
+
+    private func syncDirectoryRecursively(directoryURL: URL) async {
+        let fileManager = FileManager.default
+        guard let enumerator = fileManager.enumerator(
+            at: directoryURL,
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        for case let fileURL as URL in enumerator {
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+                let rootURL = URL(fileURLWithPath: config.syncFolderPath)
+                var relPath = String(fileURL.path.dropFirst(rootURL.path.count))
+                if relPath.hasPrefix("/") { relPath = String(relPath.dropFirst()) }
+                await processLocalUpload(fileURL: fileURL, relativePath: relPath)
+            }
+        }
+    }
+
+    private func notifyWebSync(action: String, relativePath: String) async {
+        let domain = config.publicDomainURL.isEmpty ? "https://drive.ocpp-labs.com" : config.publicDomainURL
+        let cleanDomain = domain.hasSuffix("/") ? String(domain.dropLast()) : domain
+        
+        guard let url = URL(string: "\(cleanDomain)/api/files?filePath=\(relativePath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? relativePath)") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = action == "delete" ? "DELETE" : "GET"
+        
+        _ = try? await URLSession.shared.data(for: request)
     }
 }

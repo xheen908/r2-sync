@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { s3Client, r2BucketName } from "@/lib/r2";
+import { getS3Client } from "@/lib/r2";
 import { ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 export const dynamic = "force-dynamic";
@@ -7,14 +7,70 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   let files: any[] = [];
   let activeCounts: Record<string, number> = {};
+  let r2FilesMap = new Map<string, { size: number; etag: string; updatedAt: number }>();
 
-  // 1. Try reading from local SQLite database
+  // 1. Fetch live object listing directly from Cloudflare R2 Bucket
+  try {
+    const { s3Client, bucketName } = await getS3Client();
+    const command = new ListObjectsV2Command({ Bucket: bucketName });
+    const res = await s3Client.send(command);
+
+    if (res.Contents) {
+      for (const item of res.Contents) {
+        if (item.Key && !item.Key.startsWith(".shares/")) {
+          r2FilesMap.set(item.Key, {
+            size: item.Size || 0,
+            etag: item.ETag || "",
+            updatedAt: item.LastModified ? new Date(item.LastModified).getTime() : Date.now(),
+          });
+        }
+      }
+    }
+  } catch (r2Err) {
+    console.warn("Files API: Live R2 scan failed:", r2Err);
+  }
+
+  // 2. Sync with local SQLite Database
   try {
     const { getDb } = await import("@/lib/db");
     const db = await getDb();
-    files = await db.all("SELECT * FROM files ORDER BY updated_at DESC");
 
-    // Calculate active share link counts per file
+    // A. Read existing files from DB
+    const dbFiles = await db.all("SELECT * FROM files ORDER BY updated_at DESC");
+    const dbPathSet = new Set<string>();
+
+    for (const f of dbFiles) {
+      if (r2FilesMap.has(f.path)) {
+        dbPathSet.add(f.path);
+        files.push(f);
+      } else {
+        // File was deleted from R2 (e.g. via Mac App) -> remove stale record from SQLite DB
+        await db.run("DELETE FROM files WHERE path = ?", [f.path]);
+        await db.run("DELETE FROM share_links WHERE file_path = ?", [f.path]);
+      }
+    }
+
+    // B. Index new files from R2 into DB (e.g. uploaded via Mac App)
+    for (const [key, meta] of r2FilesMap.entries()) {
+      if (!dbPathSet.has(key)) {
+        const fileId = `f_${Math.random().toString(36).substring(2)}`;
+        const filename = key.split("/").pop() || key;
+        await db.run(
+          "INSERT OR REPLACE INTO files (id, path, filename, size, etag, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+          [fileId, key, filename, meta.size, meta.etag, meta.updatedAt]
+        );
+        files.push({
+          id: fileId,
+          path: key,
+          filename,
+          size: meta.size,
+          etag: meta.etag,
+          updated_at: meta.updatedAt,
+        });
+      }
+    }
+
+    // C. Calculate active share link counts per file
     const now = Date.now();
     const counts = await db.all(
       "SELECT file_path, COUNT(*) as count FROM share_links WHERE expires_at IS NULL OR expires_at > ? GROUP BY file_path",
@@ -24,30 +80,18 @@ export async function GET() {
       activeCounts[row.file_path] = row.count;
     }
   } catch (dbErr) {
-    console.warn("Files API: SQLite lookup failed, falling back to R2 directly:", dbErr);
-  }
-
-  // 2. If SQLite DB has no files or DB lookup failed, list files directly from Cloudflare R2
-  if (files.length === 0) {
-    try {
-      const command = new ListObjectsV2Command({ Bucket: r2BucketName });
-      const res = await s3Client.send(command);
-
-      if (res.Contents) {
-        const now = Date.now();
-        files = res.Contents
-          .filter((item) => item.Key && !item.Key.startsWith(".shares/"))
-          .map((item) => ({
-            id: `f_${Math.random().toString(36).substring(2)}`,
-            path: item.Key,
-            filename: item.Key!.split("/").pop() || item.Key,
-            size: item.Size || 0,
-            etag: item.ETag || "",
-            updated_at: item.LastModified ? new Date(item.LastModified).getTime() : now,
-          }));
+    console.warn("Files API: SQLite synchronization failed, serving R2 map directly:", dbErr);
+    if (files.length === 0) {
+      for (const [key, meta] of r2FilesMap.entries()) {
+        files.push({
+          id: `f_${Math.random().toString(36).substring(2)}`,
+          path: key,
+          filename: key.split("/").pop() || key,
+          size: meta.size,
+          etag: meta.etag,
+          updated_at: meta.updatedAt,
+        });
       }
-    } catch (r2Err) {
-      console.error("Files API: R2 direct list failed:", r2Err);
     }
   }
 
@@ -77,8 +121,9 @@ export async function DELETE(request: Request) {
 
   // 1. Delete object from Cloudflare R2
   try {
+    const { s3Client, bucketName } = await getS3Client();
     const deleteCmd = new DeleteObjectCommand({
-      Bucket: r2BucketName,
+      Bucket: bucketName,
       Key: filePath,
     });
     await s3Client.send(deleteCmd);
