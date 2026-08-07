@@ -21,14 +21,39 @@ if publicDomainURL.hasSuffix("/") {
 }
 
 let rootURL = URL(fileURLWithPath: syncFolderPath)
-
 var relativePath = String(fileURL.path.dropFirst(rootURL.path.count))
 if relativePath.hasPrefix("/") { relativePath = String(relativePath.dropFirst()) }
 
-// Check optional TTL argument (default 24h)
+// If TTL provided via command line argument, use it; otherwise pop up native GUI selection dialog for duration!
 var ttlHours: Int? = 24
-if CommandLine.arguments.count > 2, let parsedTTL = Int(CommandLine.arguments[2]) {
-    ttlHours = parsedTTL == 0 ? nil : parsedTTL
+
+if CommandLine.arguments.count > 2, let parsed = Int(CommandLine.arguments[2]) {
+    ttlHours = parsed == 0 ? nil : parsed
+} else {
+    // Pop up native macOS selection dialog for duration
+    let alert = NSAlert()
+    alert.messageText = "R2 Freigabelink erstellen"
+    alert.informativeText = "Wähle die Ablaufzeit für:\n\"\(fileURL.lastPathComponent)\""
+    alert.alertStyle = .informational
+
+    alert.addButton(withTitle: "24 Stunden")              // Button 1 (Default)
+    alert.addButton(withTitle: "7 Tage")                   // Button 2
+    alert.addButton(withTitle: "30 Tage")                  // Button 3
+    alert.addButton(withTitle: "Dauerhaft (Kein Ablauf)")  // Button 4
+
+    NSApp.activate(ignoringOtherApps: true)
+    let response = alert.runModal()
+
+    switch response {
+    case .alertFirstButtonReturn:
+        ttlHours = 24
+    case .alertSecondButtonReturn:
+        ttlHours = 168
+    case .alertThirdButtonReturn:
+        ttlHours = 720
+    default:
+        ttlHours = nil
+    }
 }
 
 // Call Web API POST /api/share
@@ -38,10 +63,12 @@ var request = URLRequest(url: apiURL)
 request.httpMethod = "POST"
 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-let isFolder = (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+var isDirectory: ObjCBool = false
+FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
+
 let payload: [String: Any?] = [
     "filePath": relativePath,
-    "isFolder": isFolder,
+    "isFolder": isDirectory.boolValue,
     "ttlHours": ttlHours
 ]
 
@@ -61,7 +88,6 @@ task.resume()
 _ = semaphore.wait(timeout: .now() + 5.0)
 
 if generatedShareURL.isEmpty {
-    // Fallback if offline
     generatedShareURL = "\(publicDomainURL)/s/\(relativePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relativePath)"
 }
 
@@ -70,4 +96,4 @@ pasteboard.clearContents()
 pasteboard.declareTypes([.string], owner: nil)
 pasteboard.setString(generatedShareURL, forType: .string)
 
-print("COPIED EXPIRING R2 SHARE LINK:", generatedShareURL)
+print("COPIED R2 SHARE LINK:", generatedShareURL)

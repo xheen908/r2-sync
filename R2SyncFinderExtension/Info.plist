@@ -31,7 +31,7 @@
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.FinderSync</string>
         <key>NSExtensionPrincipalClass</key>
-        <string>_TtC21R2SyncFinderExtension10FinderSync</string>
+        <string>R2SyncFinderExtension.FinderSync</string>
     </dict>
     <key>NSPrincipalClass</key>
     <string>NSObject</string>
