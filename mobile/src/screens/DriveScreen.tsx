@@ -35,11 +35,13 @@ import {
   Home,
   Eye,
   X,
+  Edit2,
 } from "lucide-react-native";
 import {
   fetchFilesList,
   deleteFileFromVPS,
   moveFileOnVPS,
+  renameFileOnVPS,
   generateShareLink,
   clearConfig,
   getSavedConfig,
@@ -324,6 +326,37 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     }
   };
 
+  const handleRename = (file: any) => {
+    setIsActionModalVisible(false);
+    const currentName = file.filename || file.name || "";
+    
+    Alert.prompt(
+      "Umbenennen",
+      `Neuen Namen eingeben für "${currentName}":`,
+      [
+        { text: "Abbrechen", style: "cancel" },
+        {
+          text: "Speichern",
+          onPress: async (newFilename?: string) => {
+            if (!newFilename || !newFilename.trim() || newFilename.trim() === currentName) return;
+            try {
+              const success = await renameFileOnVPS(file.path, newFilename.trim(), !!file.isFolder);
+              if (success) {
+                await loadData();
+              } else {
+                Alert.alert("Fehler", "Umbenennen fehlgeschlagen.");
+              }
+            } catch (err: any) {
+              Alert.alert("Fehler", err?.message || "Umbenennen fehlgeschlagen.");
+            }
+          },
+        },
+      ],
+      "plain-text",
+      currentName
+    );
+  };
+
   const handleDelete = (filePath: string) => {
     Alert.alert(
       "Löschen bestätigen",
@@ -500,7 +533,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       {/* File List */}
       <FlatList
         data={getDisplayItems()}
-        keyExtractor={(item) => item.path || item.name}
+        keyExtractor={(item: any) => item.path || item.name || item.filename}
         renderItem={renderItem}
         contentContainerStyle={styles.listContainer}
         refreshControl={
@@ -684,6 +717,15 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
                   <Text style={styles.modalSubtitle}>Freigabe & Aktionen auswählen</Text>
                 </View>
               </View>
+
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.8}
+                onPress={() => handleRename(selectedFile)}
+              >
+                <Edit2 size={18} color="#38BDF8" strokeWidth={2} style={{ marginRight: 12 }} />
+                <Text style={styles.actionBtnText}>Umbenennen</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.actionBtn}
