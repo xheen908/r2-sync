@@ -56,11 +56,31 @@ export function cleanServerUrl(url: string): string {
 
 export async function loginAndFetchConfig(serverUrl: string, username: string, password: string): Promise<ApiConfig> {
   const baseUrl = cleanServerUrl(serverUrl);
-  const response = await fetch(`${baseUrl}/api/account/sync-config`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${baseUrl}/api/account/sync-config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+  } catch (netErr: any) {
+    const errMsg = netErr?.message || String(netErr);
+    if (errMsg.includes("SSLHandshakeException") || errMsg.includes("Chain validation")) {
+      const httpUrl = baseUrl.replace("https://", "http://");
+      try {
+        response = await fetch(`${httpUrl}/api/account/sync-config`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+      } catch (fallbackErr) {
+        throw new Error("Zertifikatsfehler auf dem Emulator. Verwende auf echten Geräten https oder gib http:// an.");
+      }
+    } else {
+      throw new Error(errMsg);
+    }
+  }
 
   if (!response.ok) {
     const errData = await response.json().catch(() => ({}));

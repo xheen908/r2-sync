@@ -10,7 +10,7 @@ import {
   Platform,
   SafeAreaView,
   Alert,
-} from "react me";
+} from "react-native";
 import { loginAndFetchConfig } from "../services/api";
 
 interface LoginScreenProps {
