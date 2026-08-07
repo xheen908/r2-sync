@@ -56,30 +56,26 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   useEffect(() => {
     loadData();
     
-    const triggerSync = () => {
-      runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
-    };
-
-    triggerSync();
+    // Run photo sync once on app launch
+    runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
 
     // 1. Listen for new photos added to Camera Roll in real-time
     const mediaSub = subscribeToMediaChanges(() => {
       console.log("[DriveScreen] Real-time photo addition detected in Camera Roll");
-      triggerSync();
+      runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
     });
 
     // 2. Listen for AppState changes (e.g. returning to R2Sync from Camera app)
     const appStateSub = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
-        console.log("[DriveScreen] App became active, triggering photo sync");
-        triggerSync();
+        console.log("[DriveScreen] App active, triggering photo sync");
+        runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
       }
     });
 
-    // 3. Periodic background sync check every 4 seconds
+    // 3. Periodic background file list refresh every 4 seconds
     const interval = setInterval(() => {
       loadData();
-      triggerSync();
     }, 4000);
 
     return () => {

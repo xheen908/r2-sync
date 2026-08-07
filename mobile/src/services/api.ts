@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 export interface FileItem {
   id: string;
@@ -101,26 +101,59 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
   const cfg = await getSavedConfig();
   if (!cfg) throw new Error("Nicht angemeldet");
 
+  const filename = targetPath.split("/").pop() || "upload.jpg";
   const folderPath = targetPath.includes("/") ? targetPath.substring(0, targetPath.lastIndexOf("/")) : "";
 
-  try {
-    const uploadResult = await FileSystem.uploadAsync(
-      `${cfg.serverUrl}/api/files/upload`,
-      fileUri,
-      {
-        httpMethod: "POST",
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: "file",
-        parameters: {
-          folderPath: folderPath,
-        },
+  const httpsUrl = `${cfg.serverUrl}/api/files/upload`;
+  const httpUrl = cfg.serverUrl.replace("https://", "http://") + "/api/files/upload";
+
+  // 1. FileSystem.uploadAsync
+  for (const endpoint of [httpsUrl, httpUrl]) {
+    try {
+      const uploadResult = await FileSystem.uploadAsync(
+        endpoint,
+        fileUri,
+        {
+          httpMethod: "POST",
+          uploadType: (FileSystem as any).FileSystemUploadType?.MULTIPART || (FileSystem as any).UploadType?.MULTIPART || "multipart",
+          fieldName: "file",
+          parameters: {
+            folderPath: folderPath,
+          },
+        }
+      );
+      if (uploadResult.status >= 200 && uploadResult.status < 300) {
+        return true;
       }
-    );
-    return uploadResult.status >= 200 && uploadResult.status < 300;
-  } catch (err) {
-    console.warn("FileSystem upload error:", err);
-    return false;
+    } catch (err) {
+      // Fallback
+    }
   }
+
+  // 2. React Native FormData fetch upload
+  for (const endpoint of [httpsUrl, httpUrl]) {
+    try {
+      const cleanUri = fileUri.startsWith("file://") || fileUri.startsWith("content://") ? fileUri : `file://${fileUri}`;
+      const formData = new FormData();
+      // @ts-ignore
+      formData.append("file", {
+        uri: cleanUri,
+        name: filename,
+        type: mimeType || "image/jpeg",
+      });
+      formData.append("folderPath", folderPath);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body: formData,
+      });
+      if (response.ok) return true;
+    } catch (err) {
+      // Fallback
+    }
+  }
+
+  return false;
 }
 
 export async function deleteFileFromVPS(filePath: string): Promise<boolean> {

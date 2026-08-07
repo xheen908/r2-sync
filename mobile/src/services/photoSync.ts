@@ -1,4 +1,11 @@
-import * as MediaLibrary from "expo-media-library";
+import {
+  getAssetsAsync,
+  requestPermissionsAsync,
+  getAssetInfoAsync,
+  addListener,
+  SortBy,
+  MediaType,
+} from "expo-media-library/legacy";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { uploadFileToVPS, STORAGE_KEYS } from "./api";
 
@@ -9,10 +16,12 @@ export interface SyncProgressStatus {
   statusText: string;
 }
 
+let isSyncInProgress = false;
+
 export async function requestMediaPermissions(): Promise<boolean> {
   try {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    return status === "granted";
+    const res = await requestPermissionsAsync();
+    return res.status === "granted";
   } catch (err) {
     console.warn("Media permissions request error:", err);
     return false;
@@ -21,18 +30,24 @@ export async function requestMediaPermissions(): Promise<boolean> {
 
 export function subscribeToMediaChanges(onChange: () => void): { remove: () => void } {
   try {
-    if (typeof MediaLibrary.addListener === "function") {
-      return MediaLibrary.addListener(() => {
+    if (typeof addListener === "function") {
+      return addListener(() => {
         onChange();
       });
     }
   } catch (err) {
-    console.warn("MediaLibrary.addListener error:", err);
+    console.warn("addListener error:", err);
   }
   return { remove: () => {} };
 }
 
 export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus) => void): Promise<number> {
+  if (isSyncInProgress) {
+    console.log("[PhotoSync] Sync already in progress, skipping concurrent run.");
+    return 0;
+  }
+
+  isSyncInProgress = true;
   try {
     const hasPerms = await requestMediaPermissions();
     if (!hasPerms) {
@@ -43,18 +58,14 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
     const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
 
-    // Fetch recent photos/videos from Camera Roll sorted by creation time
-    const assetsResult = await MediaLibrary.getAssetsAsync({
+    // Fetch recent photo assets from Camera Roll
+    const assetsResult = await getAssetsAsync({
       first: 100,
-      sortBy: [MediaLibrary.SortBy.creationTime],
+      mediaType: [MediaType.photo],
     });
 
     const assetsList = assetsResult.assets || [];
-    console.log(`[PhotoSync] Total camera roll assets found: ${assetsList.length}`);
-
-    const newAssets = assetsList.filter((asset) => {
-      return asset && asset.id && !syncedIdsSet.has(asset.id);
-    });
+    const newAssets = assetsList.filter((asset) => asset && asset.id && !syncedIdsSet.has(asset.id));
 
     if (newAssets.length === 0) {
       const msg = assetsList.length === 0 ? "Keine Fotos im Telefonspeicher" : "Fotogalerie ist aktuell";
@@ -73,11 +84,13 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
     for (let i = 0; i < newAssets.length; i++) {
       const asset = newAssets[i];
-      if (!asset || !asset.id) continue;
+      if (!asset || !asset.id || syncedIdsSet.has(asset.id)) continue;
 
       try {
-        const assetInfo = await MediaLibrary.getAssetInfoAsync(asset);
-        const uri = assetInfo.localUri || asset.uri;
+        const assetInfo = await getAssetInfoAsync(asset).catch(() => null);
+        const uri = assetInfo?.localUri || asset.uri;
+        if (!uri) continue;
+
         const assetTime = asset.creationTime || asset.modificationTime || Date.now();
 
         // Target path e.g.: Kamera-Uploads/2026-08/filename.jpg
@@ -88,9 +101,13 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
         console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) to ${targetPath}...`);
         const uploaded = await uploadFileToVPS(uri, targetPath, "image/jpeg");
+
+        // Mark item as processed in AsyncStorage to prevent endless retries
+        syncedIdsSet.add(asset.id);
+        await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
+
         if (uploaded) {
           successCount++;
-          syncedIdsSet.add(asset.id);
         }
       } catch (err) {
         console.warn("Error uploading photo asset:", asset.id, err);
@@ -104,8 +121,6 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       });
     }
 
-    await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
-
     onProgress?.({
       isSyncing: false,
       totalNew: newAssets.length,
@@ -118,5 +133,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     console.warn("Auto photo sync error:", err);
     onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Fotoseicherung bereit" });
     return 0;
+  } finally {
+    isSyncInProgress = false;
   }
 }
