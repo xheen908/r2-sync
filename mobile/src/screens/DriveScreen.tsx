@@ -17,7 +17,6 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
 import {
   Cloud,
   Folder,
@@ -111,15 +110,9 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       }
     });
 
-    // 3. Periodic background file list refresh every 4 seconds
-    const interval = setInterval(() => {
-      loadData();
-    }, 4000);
-
     return () => {
       mediaSub.remove();
       appStateSub.remove();
-      clearInterval(interval);
     };
   }, []);
 
@@ -171,6 +164,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   };
 
   const handleOpenFile = async (item: FileItem) => {
+    console.log("[DriveScreen] handleOpenFile triggered for:", item.filename);
     const cfg = await getSavedConfig();
     if (!cfg) return;
 
@@ -188,23 +182,22 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     } else if (isPdf) {
       setSelectedFile(item);
       setIsPdfLoading(true);
+      setPreviewPdfHtml(null);
+      setIsPdfPreviewVisible(true);
 
       try {
         const sanitizedFilename = item.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
         const localUri = `${FileSystem.cacheDirectory}${sanitizedFilename}`;
         
-        const downloadRes = await FileSystem.downloadAsync(downloadUrl, localUri);
-        
-        if (await Sharing.isAvailableAsync()) {
-          setIsPdfLoading(false);
-          await Sharing.shareAsync(downloadRes.uri, {
-            mimeType: "application/pdf",
-            dialogTitle: item.filename,
-            UTI: "com.adobe.pdf",
-          });
-          return;
+        let downloadRes;
+        try {
+          downloadRes = await FileSystem.downloadAsync(downloadUrl, localUri);
+        } catch (httpsErr) {
+          console.warn("[DriveScreen] HTTPS PDF download failed, trying HTTP fallback...", httpsErr);
+          const httpUrl = downloadUrl.replace("https://", "http://");
+          downloadRes = await FileSystem.downloadAsync(httpUrl, localUri);
         }
-
+        
         const base64Data = await FileSystem.readAsStringAsync(downloadRes.uri, {
           encoding: FileSystem.EncodingType.Base64,
         });
@@ -217,18 +210,25 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
             <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
             <style>
               * { box-sizing: border-box; }
-              body { margin: 0; padding: 12px; background-color: #0F172A; display: flex; flex-direction: column; align-items: center; }
-              #loading { color: #F38020; font-family: -apple-system, Roboto, sans-serif; font-size: 15px; margin-top: 50px; font-weight: 700; text-align: center; }
+              html, body { width: 100%; height: 100%; margin: 0; padding: 0; background-color: #0F172A; }
+              body { padding: 12px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
+              #loading { color: #F38020; font-family: -apple-system, Roboto, sans-serif; font-size: 16px; margin-top: 40px; font-weight: 700; text-align: center; }
               #pdf-container { width: 100%; display: flex; flex-direction: column; align-items: center; }
-              canvas { width: 100% !important; height: auto !important; margin-bottom: 14px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+              canvas { width: 100% !important; height: auto !important; margin-bottom: 16px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
             </style>
           </head>
           <body>
-            <div id="loading">📄 PDF wird verarbeitet...</div>
+            <div id="loading">📄 PDF wird geladen...</div>
             <div id="pdf-container"></div>
             <script>
+              window.onerror = function(msg, url, line) {
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage("ERR: " + msg + " (" + line + ")");
+                }
+              };
+
               pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-              
+
               try {
                 const rawData = atob("${base64Data}");
                 const bytes = new Uint8Array(rawData.length);
@@ -236,7 +236,8 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
                   bytes[i] = rawData.charCodeAt(i);
                 }
 
-                pdfjsLib.getDocument({ data: bytes }).promise.then(function(pdf) {
+                const loadingTask = pdfjsLib.getDocument({ data: bytes });
+                loadingTask.promise.then(function(pdf) {
                   document.getElementById('loading').style.display = 'none';
                   const container = document.getElementById('pdf-container');
                   
@@ -258,11 +259,19 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
 
                   renderNextPage(1);
                 }).catch(function(err) {
-                  document.getElementById('loading').innerHTML = '❌ Fehler beim Rendering: ' + (err.message || String(err));
+                  const errorMsg = '❌ Fehler beim Lesen: ' + (err.message || String(err));
+                  document.getElementById('loading').innerHTML = errorMsg;
                   document.getElementById('loading').style.color = '#EF4444';
+                  if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(errorMsg);
+                  }
                 });
               } catch (e) {
-                document.getElementById('loading').innerHTML = '❌ Base64 Fehler: ' + e.message;
+                const eMsg = '❌ Base64 Decodierung fehlgeschlagen: ' + e.message;
+                document.getElementById('loading').innerHTML = eMsg;
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(eMsg);
+                }
               }
             </script>
           </body>
@@ -270,9 +279,9 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         `;
 
         setPreviewPdfHtml(htmlContent);
-        setIsPdfPreviewVisible(true);
       } catch (err: any) {
-        Alert.alert("PDF Fehler", err?.message || "PDF konnte nicht geladen werden.");
+        console.error("PDF load error:", err);
+        Alert.alert("PDF Fehler", err?.message || String(err));
       } finally {
         setIsPdfLoading(false);
       }
@@ -606,6 +615,17 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
                   originWhitelist={["*"]}
                   javaScriptEnabled
                   domStorageEnabled
+                  allowFileAccess
+                  allowFileAccessFromFileURLs
+                  allowUniversalAccessFromFileURLs
+                  mixedContentMode="always"
+                  onMessage={(e) => {
+                    const msg = e.nativeEvent.data;
+                    console.log("[WebView Message]", msg);
+                    if (msg.startsWith("ERR:")) {
+                      Alert.alert("PDF Rendering Fehler", msg);
+                    }
+                  }}
                   startInLoadingState
                   renderLoading={() => (
                     <ActivityIndicator size="large" color="#F38020" style={StyleSheet.absoluteFill} />
@@ -1074,8 +1094,7 @@ const styles = StyleSheet.create({
   },
   viewerBody: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    width: "100%",
     backgroundColor: "#0F172A",
   },
   fullImage: {
@@ -1083,6 +1102,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   fullPdf: {
+    flex: 1,
     width: "100%",
     height: "100%",
     backgroundColor: "#0F172A",
