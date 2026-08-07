@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "R2Sync",
+    "slug": "r2sync-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.r2sync.mobile",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "R2Sync benötigt Zugriff auf deine Fotogalerie, um neue Fotos automatisch in Cloudflare R2 zu sichern.",
+        "NSPhotoLibraryAddUsageDescription": "R2Sync benötigt Schreibzugriff, um heruntergeladene Fotos auf deinem Gerät zu speichern."
+      }
+    },
+    "android": {
+      "package": "com.r2sync.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "R2Sync benötigt Zugriff auf deine Fotogalerie, um neue Fotos automatisch zu sichern.",
+          "savePhotosPermission": "R2Sync benötigt Zugriff, um Fotos auf deinem Gerät zu speichern.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ]
+    ]
+  }
+}
