@@ -43,7 +43,8 @@
           "savePhotosPermission": "R2Sync benötigt Zugriff, um Fotos auf deinem Gerät zu speichern.",
           "isAccessMediaLocationEnabled": true
         }
-      ]
+      ],
+      "expo-image"
     ]
   }
 }

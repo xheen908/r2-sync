@@ -17,6 +17,7 @@ import {
   TextInput,
   Dimensions,
 } from "react-native";
+import { Image as ExpoImage } from "expo-image";
 import { WebView } from "react-native-webview";
 import * as FileSystem from "expo-file-system/legacy";
 import {
@@ -459,8 +460,8 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
 
     const fileExt = (item.filename || "").split(".").pop()?.toLowerCase() || "";
     const isImage = IMAGE_EXTENSIONS.includes(fileExt);
-    const thumbUrl = serverUrl
-      ? `${serverUrl}/api/files/download?filePath=${encodeURIComponent(item.path)}&inline=1`
+    const thumbUrl = serverUrl && isImage
+      ? `${serverUrl}/api/files/thumbnail?filePath=${encodeURIComponent(item.path)}&size=300`
       : null;
 
     return (
@@ -471,10 +472,13 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         activeOpacity={0.85}
       >
         {isImage && thumbUrl ? (
-          <Image
+          <ExpoImage
             source={{ uri: thumbUrl }}
             style={styles.galleryThumb}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="disk"
+            recyclingKey={item.path}
+            transition={150}
           />
         ) : (
           <View style={styles.galleryThumbPlaceholder}>
