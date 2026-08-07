@@ -78,7 +78,13 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
             relativePath = String(relativePath.dropFirst())
         }
 
-        guard !relativePath.isEmpty, !relativePath.hasPrefix("."), !relativePath.contains("/.") else { return }
+        guard !relativePath.isEmpty,
+              !relativePath.hasPrefix("."),
+              !relativePath.contains("/."),
+              !relativePath.hasSuffix(".textClipping"),
+              !relativePath.hasSuffix(".tmp"),
+              !relativePath.hasSuffix(".download"),
+              !relativePath.hasSuffix(".part") else { return }
 
         Task {
             var isDirectory: ObjCBool = false
@@ -176,7 +182,7 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
                 }
             }
 
-            // 3. LOCAL -> REMOTE DELETION SYNC: Delete local file if it was deleted in Web UI / R2 Bucket
+            // 3. LOCAL -> REMOTE SYNC: Upload local files missing in R2 (instead of deleting them locally)
             if let enumerator = fileManager.enumerator(at: rootURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
                 for case let localFileURL as URL in enumerator {
                     var isDirectory: ObjCBool = false
@@ -184,12 +190,17 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
                         var relPath = String(localFileURL.path.dropFirst(rootURL.path.count))
                         if relPath.hasPrefix("/") { relPath = String(relPath.dropFirst()) }
                         
-                        if !relPath.isEmpty && !relPath.hasPrefix(".") && !relPath.contains("/.") {
-                            // If local file is missing remotely in R2 bucket, remove it from local filesystem
-                            if !remoteKeysSet.contains(relPath) {
-                                print("[SyncEngineController] File \(relPath) was deleted in Web/R2. Removing from local Mac filesystem...")
-                                try? fileManager.removeItem(at: localFileURL)
-                            }
+                        let isIgnored = relPath.isEmpty ||
+                                        relPath.hasPrefix(".") ||
+                                        relPath.contains("/.") ||
+                                        relPath.hasSuffix(".textClipping") ||
+                                        relPath.hasSuffix(".tmp") ||
+                                        relPath.hasSuffix(".download") ||
+                                        relPath.hasSuffix(".part")
+
+                        if !isIgnored && !remoteKeysSet.contains(relPath) {
+                            print("[SyncEngineController] New local file detected during sync: \(relPath). Uploading to R2...")
+                            await processLocalUpload(fileURL: localFileURL, relativePath: relPath)
                         }
                     }
                 }
