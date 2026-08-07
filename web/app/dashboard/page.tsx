@@ -140,6 +140,7 @@ export default function DashboardPage() {
   const [renameModal, setRenameModal] = useState<FileItem | null>(null);
   const [newFilenameInput, setNewFilenameInput] = useState("");
   const [renaming, setRenaming] = useState(false);
+  const [previewModalFile, setPreviewModalFile] = useState<FileItem | null>(null);
 
   // Drag & Drop Upload states
   const [isDraggingExternal, setIsDraggingExternal] = useState(false);
@@ -217,6 +218,7 @@ export default function DashboardPage() {
       if (e.key === "Escape") {
         setContextMenu(null);
         setPopoverOpen(false);
+        setPreviewModalFile(null);
       }
     };
     window.addEventListener("click", handleGlobalClick);
@@ -279,6 +281,18 @@ export default function DashboardPage() {
       }
     } catch (err) {
       console.error("Error moving item:", err);
+    }
+  };
+
+  const handleFileClick = (file: FileItem) => {
+    const ext = file.filename.split(".").pop()?.toLowerCase() || "";
+    const isImage = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic"].includes(ext);
+    const isPdf = ext === "pdf";
+
+    if (isImage || isPdf) {
+      setPreviewModalFile(file);
+    } else {
+      handleDirectDownload(file);
     }
   };
 
@@ -821,11 +835,12 @@ export default function DashboardPage() {
                             setDraggedItem(row);
                           }}
                           onDragEnd={() => setDraggedItem(null)}
+                          onClick={() => handleFileClick(file)}
                           onContextMenu={(e) => handleContextMenu(e, row)}
-                          className={`transition-colors group ${
+                          className={`transition-colors group cursor-pointer ${
                             isBeingDragged
                               ? "opacity-40 bg-slate-800/30 cursor-grabbing"
-                              : "hover:bg-slate-800/40 cursor-grab active:cursor-grabbing"
+                              : "hover:bg-slate-800/40"
                           }`}
                         >
                           <td className="py-3.5 px-4 flex items-center gap-3">
@@ -1539,6 +1554,98 @@ export default function DashboardPage() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* FULLSCREEN IMAGE & PDF PREVIEW LIGHTBOX MODAL */}
+      {previewModalFile && (
+        <div
+          onClick={() => setPreviewModalFile(null)}
+          className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-50 flex flex-col items-center justify-between p-4 sm:p-6 animate-fade-in select-none"
+        >
+          {/* Header */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-5xl flex items-center justify-between gap-4 bg-slate-900/90 border border-slate-800 p-4 rounded-2xl shadow-2xl z-10"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              {getFileIcon(previewModalFile.filename)}
+              <div className="flex flex-col min-w-0">
+                <h3 className="font-semibold text-white truncate text-base">
+                  {previewModalFile.filename}
+                </h3>
+                <p className="text-xs text-slate-400 font-mono">
+                  {formatBytes(previewModalFile.size)} • {previewModalFile.path}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => openShareModal(previewModalFile)}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-orange-400 font-medium text-xs flex items-center gap-2 transition-colors border border-slate-700"
+              >
+                <Share2 className="w-4 h-4" />
+                <span className="hidden sm:inline">Teilen</span>
+              </button>
+
+              <button
+                onClick={() => handleDirectDownload(previewModalFile)}
+                className="px-3.5 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs flex items-center gap-2 transition-colors shadow-lg shadow-orange-500/20"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Herunterladen</span>
+              </button>
+
+              <button
+                onClick={() => setPreviewModalFile(null)}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-700 ml-1"
+                title="Schließen (ESC)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Media Body */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 w-full max-w-5xl flex items-center justify-center my-4 overflow-hidden relative"
+          >
+            {(() => {
+              const ext = previewModalFile.filename.split(".").pop()?.toLowerCase() || "";
+              const isImage = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic"].includes(ext);
+              const isPdf = ext === "pdf";
+              const downloadUrl = `/api/files/download?filePath=${encodeURIComponent(previewModalFile.path)}&inline=1`;
+
+              if (isImage) {
+                return (
+                  <img
+                    src={downloadUrl}
+                    alt={previewModalFile.filename}
+                    className="max-h-[80vh] max-w-full object-contain rounded-2xl shadow-2xl border border-slate-800/80 transition-all duration-300"
+                  />
+                );
+              }
+
+              if (isPdf) {
+                return (
+                  <iframe
+                    src={downloadUrl}
+                    className="w-full h-[80vh] rounded-2xl border border-slate-800 shadow-2xl bg-slate-900"
+                    title={previewModalFile.filename}
+                  />
+                );
+              }
+
+              return null;
+            })()}
+          </div>
+
+          {/* Footer hint */}
+          <div className="text-xs text-slate-500 font-medium">
+            Klicke außerhalb oder drücke <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-300 font-mono">ESC</kbd> zum Schließen
           </div>
         </div>
       )}
