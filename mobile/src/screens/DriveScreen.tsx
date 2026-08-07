@@ -19,6 +19,7 @@ import {
   BackHandler,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
+import * as NavigationBar from "expo-navigation-bar";
 import { WebView } from "react-native-webview";
 import * as FileSystem from "expo-file-system/legacy";
 import {
@@ -163,6 +164,25 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       mediaSub.remove();
       appStateSub.remove();
     };
+  }, []);
+
+  // Enforce Navigation Bar background color on Android
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      try {
+        if (NavigationBar && typeof NavigationBar.setPositionAsync === "function") {
+          NavigationBar.setPositionAsync("relative");
+        }
+        if (NavigationBar && typeof NavigationBar.setBackgroundColorAsync === "function") {
+          NavigationBar.setBackgroundColorAsync("#0B1120");
+        }
+        if (NavigationBar && typeof NavigationBar.setButtonStyleAsync === "function") {
+          NavigationBar.setButtonStyleAsync("light");
+        }
+      } catch (err) {
+        console.warn("NavigationBar setup error:", err);
+      }
+    }
   }, []);
 
   // Handle Android Hardware Back Button
@@ -1178,7 +1198,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0F172A",
+    backgroundColor: "#0B1120",
   },
   header: {
     flexDirection: "row",
