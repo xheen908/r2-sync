@@ -16,6 +16,7 @@ export async function GET(
   const { shareId } = params;
   const url = new URL(request.url);
   const password = url.searchParams.get("password") || "";
+  const requestedFilePath = url.searchParams.get("filePath") || "";
 
   if (!shareId) {
     return NextResponse.json({ error: "Ungültiger Link" }, { status: 400 });
@@ -45,6 +46,7 @@ export async function GET(
           id: data.shareId,
           file_path: data.filePath,
           filename: data.filename,
+          isFolder: !!data.isFolder,
           expires_at: data.expiresAt,
           password_hash: data.passwordHash,
         };
@@ -69,11 +71,23 @@ export async function GET(
     }
   }
 
+  // Determine target key: if picking specific file in folder, or single file
+  let targetKey = share.file_path;
+  if (requestedFilePath) {
+    // Security check: ensure requested file is inside shared folder
+    const prefix = share.file_path.endsWith("/") ? share.file_path : `${share.file_path}/`;
+    if (requestedFilePath.startsWith(prefix) || requestedFilePath === share.file_path) {
+      targetKey = requestedFilePath;
+    }
+  }
+
+  const filename = targetKey.split("/").pop() || share.filename || "download";
+
   // Stream file directly from R2
   try {
     const getFileCmd = new GetObjectCommand({
       Bucket: r2BucketName,
-      Key: share.file_path,
+      Key: targetKey,
     });
     const fileRes = await s3Client.send(getFileCmd);
 
@@ -84,7 +98,7 @@ export async function GET(
     const stream = fileRes.Body.transformToWebStream();
     const headers = new Headers();
     headers.set("Content-Type", fileRes.ContentType || "application/octet-stream");
-    headers.set("Content-Disposition", `inline; filename="${encodeURIComponent(share.filename)}"`);
+    headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
 
     return new Response(stream, { headers });
   } catch (r2StreamErr) {

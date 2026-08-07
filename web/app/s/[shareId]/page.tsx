@@ -14,6 +14,10 @@ import {
   CheckCircle2,
   XCircle,
   FolderOpen,
+  Search,
+  CheckSquare,
+  Square,
+  FileCheck,
 } from "lucide-react";
 
 interface FolderFileItem {
@@ -44,6 +48,10 @@ export default function PublicSharePage() {
   const [error, setError] = useState("");
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
 
+  // Folder File Picker state
+  const [folderSearch, setFolderSearch] = useState("");
+  const [selectedFilePaths, setSelectedFilePaths] = useState<string[]>([]);
+
   useEffect(() => {
     if (!shareId) return;
     const loadShare = async () => {
@@ -73,9 +81,9 @@ export default function PublicSharePage() {
     setError("");
 
     try {
-      const url = `/api/s/${shareId}/download${
-        password ? `?password=${encodeURIComponent(password)}` : ""
-      }`;
+      const url = `/api/s/${shareId}/download?${
+        filePath ? `filePath=${encodeURIComponent(filePath)}&` : ""
+      }${password ? `password=${encodeURIComponent(password)}` : ""}`;
 
       const res = await fetch(url);
       if (!res.ok) {
@@ -100,6 +108,31 @@ export default function PublicSharePage() {
     }
   };
 
+  const handleDownloadSelected = async () => {
+    if (selectedFilePaths.length === 0) return;
+    for (const path of selectedFilePaths) {
+      const fileObj = shareInfo?.folderFiles?.find((f) => f.path === path);
+      await handleDownloadFile(path, fileObj?.filename);
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (!shareInfo?.folderFiles) return;
+    if (selectedFilePaths.length === shareInfo.folderFiles.length) {
+      setSelectedFilePaths([]);
+    } else {
+      setSelectedFilePaths(shareInfo.folderFiles.map((f) => f.path));
+    }
+  };
+
+  const toggleSelectFile = (path: string) => {
+    if (selectedFilePaths.includes(path)) {
+      setSelectedFilePaths((prev) => prev.filter((p) => p !== path));
+    } else {
+      setSelectedFilePaths((prev) => [...prev, path]);
+    }
+  };
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return "0 Bytes";
     const k = 1024;
@@ -112,12 +145,16 @@ export default function PublicSharePage() {
     shareInfo?.expired ||
     (shareInfo?.expiresAt && Date.now() > shareInfo.expiresAt);
 
+  const filteredFolderFiles = (shareInfo?.folderFiles || []).filter((f) =>
+    f.filename.toLowerCase().includes(folderSearch.toLowerCase())
+  );
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-slate-950 text-slate-100">
       {/* Background Glow */}
       <div className="absolute top-1/3 left-1/3 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="w-full max-w-xl bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 shadow-2xl z-10 text-center">
+      <div className="w-full max-w-2xl bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-8 shadow-2xl z-10 text-center">
         {/* Header Logo */}
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-400 shadow-lg shadow-orange-500/20 mb-6">
           <Cloud className="w-8 h-8 text-white" />
@@ -152,7 +189,7 @@ export default function PublicSharePage() {
                 )}
                 <span>{shareInfo?.isFolder ? "Freigegebener Ordner" : "Freigegebene Datei"}</span>
               </div>
-              <h2 className="text-xl font-bold text-white tracking-tight break-all">
+              <h2 className="text-2xl font-bold text-white tracking-tight break-all">
                 {shareInfo?.filename}
               </h2>
             </div>
@@ -197,31 +234,107 @@ export default function PublicSharePage() {
               </p>
             )}
 
-            {/* IF FOLDER SHARE: Render List of Files in Folder */}
-            {shareInfo?.isFolder && shareInfo.folderFiles && shareInfo.folderFiles.length > 0 ? (
-              <div className="space-y-3 text-left">
-                <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider">
-                  Enthaltene Dateien ({shareInfo.folderFiles.length})
-                </h3>
-                <div className="max-h-60 overflow-y-auto divide-y divide-slate-800 bg-slate-950/80 border border-slate-800 rounded-2xl">
-                  {shareInfo.folderFiles.map((file) => (
-                    <div key={file.path} className="p-3 flex items-center justify-between gap-3 hover:bg-slate-900/60 transition-colors">
-                      <div className="flex items-center gap-2.5 truncate">
-                        <FileText className="w-4 h-4 text-blue-400 shrink-0" />
-                        <span className="text-xs font-medium text-slate-200 truncate">{file.filename}</span>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-[11px] font-mono text-slate-500">{formatBytes(file.size)}</span>
-                        <button
-                          onClick={() => handleDownloadFile(file.path, file.filename)}
-                          className="p-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs flex items-center gap-1 transition-all"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+            {/* IF FOLDER SHARE: Render Interactive File Picker */}
+            {shareInfo?.isFolder ? (
+              <div className="space-y-4 text-left">
+                {/* Search & Actions Bar */}
+                <div className="flex items-center justify-between gap-3 bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input
+                      type="text"
+                      value={folderSearch}
+                      onChange={(e) => setFolderSearch(e.target.value)}
+                      placeholder="Dateien durchsuchen..."
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl py-1.5 pl-9 pr-3 text-xs text-white outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <button
+                    onClick={toggleSelectAll}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition-colors shrink-0"
+                  >
+                    {selectedFilePaths.length === (shareInfo.folderFiles?.length || 0) ? (
+                      <CheckSquare className="w-3.5 h-3.5 text-orange-400" />
+                    ) : (
+                      <Square className="w-3.5 h-3.5 text-slate-500" />
+                    )}
+                    <span>Alle wählen</span>
+                  </button>
                 </div>
+
+                {/* File Picker Table */}
+                <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/80 bg-slate-950/80 border border-slate-800 rounded-2xl">
+                  {filteredFolderFiles.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500 text-xs">
+                      Keine Dateien in diesem Ordner gefunden.
+                    </div>
+                  ) : (
+                    filteredFolderFiles.map((file) => {
+                      const isSelected = selectedFilePaths.includes(file.path);
+                      return (
+                        <div
+                          key={file.path}
+                          onClick={() => toggleSelectFile(file.path)}
+                          className={`p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                            isSelected ? "bg-orange-500/10 border-l-2 border-orange-500" : "hover:bg-slate-900/60"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 truncate">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSelectFile(file.path);
+                              }}
+                              className="text-slate-500 hover:text-orange-400"
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="w-4 h-4 text-orange-400" />
+                              ) : (
+                                <Square className="w-4 h-4" />
+                              )}
+                            </button>
+                            <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                            <span className="text-xs font-medium text-slate-200 truncate">
+                              {file.filename}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-[11px] font-mono text-slate-500">
+                              {formatBytes(file.size)}
+                            </span>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadFile(file.path, file.filename);
+                              }}
+                              disabled={downloadingFile === file.path}
+                              className="p-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500 text-orange-400 hover:text-white border border-orange-500/30 text-xs flex items-center gap-1 transition-all"
+                              title="Diese Datei einzeln herunterladen"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Download Selected Files Button */}
+                {selectedFilePaths.length > 0 && (
+                  <button
+                    onClick={handleDownloadSelected}
+                    className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold py-2.5 rounded-xl shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>
+                      {selectedFilePaths.length} {selectedFilePaths.length === 1 ? "Datei" : "Dateien"} herunterladen
+                    </span>
+                  </button>
+                )}
               </div>
             ) : (
               /* IF SINGLE FILE SHARE: Render Single Download Button */
