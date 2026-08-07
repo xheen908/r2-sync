@@ -30,33 +30,25 @@ public class FinderSync: FIFinderSync {
     public override func menu(for menuKind: FIMenuKind) -> NSMenu? {
         let menu = NSMenu(title: "")
 
-        let shareSubmenu = NSMenu(title: "R2 Freigabelink erstellen")
-
-        let item1h = NSMenuItem(title: "⏱️ 1 Stunde", action: #selector(copyLink1h(_:)), keyEquivalent: "")
-        item1h.target = self
-        shareSubmenu.addItem(item1h)
-
-        let item24h = NSMenuItem(title: "⏱️ 24 Stunden (1 Tag)", action: #selector(copyLink24h(_:)), keyEquivalent: "")
+        let item24h = NSMenuItem(title: "🔗 R2 Link kopieren (24h Ablauf)", action: #selector(copyLink24h(_:)), keyEquivalent: "")
         item24h.target = self
-        shareSubmenu.addItem(item24h)
+        menu.addItem(item24h)
 
-        let item7d = NSMenuItem(title: "⏱️ 7 Tage", action: #selector(copyLink7d(_:)), keyEquivalent: "")
+        let item7d = NSMenuItem(title: "🔗 R2 Link kopieren (7 Tage Ablauf)", action: #selector(copyLink7d(_:)), keyEquivalent: "")
         item7d.target = self
-        shareSubmenu.addItem(item7d)
+        menu.addItem(item7d)
 
-        let item30d = NSMenuItem(title: "⏱️ 30 Tage", action: #selector(copyLink30d(_:)), keyEquivalent: "")
+        let item30d = NSMenuItem(title: "🔗 R2 Link kopieren (30 Tage Ablauf)", action: #selector(copyLink30d(_:)), keyEquivalent: "")
         item30d.target = self
-        shareSubmenu.addItem(item30d)
+        menu.addItem(item30d)
 
-        shareSubmenu.addItem(NSMenuItem.separator())
+        let item1h = NSMenuItem(title: "🔗 R2 Link kopieren (1 Std. Ablauf)", action: #selector(copyLink1h(_:)), keyEquivalent: "")
+        item1h.target = self
+        menu.addItem(item1h)
 
-        let itemPerm = NSMenuItem(title: "♾️ Dauerhaft (Kein Ablauf)", action: #selector(copyLinkPermanent(_:)), keyEquivalent: "")
+        let itemPerm = NSMenuItem(title: "♾️ R2 Link kopieren (Dauerhaft)", action: #selector(copyLinkPermanent(_:)), keyEquivalent: "")
         itemPerm.target = self
-        shareSubmenu.addItem(itemPerm)
-
-        let parentItem = NSMenuItem(title: "🔗 R2 Freigabelink erstellen", action: nil, keyEquivalent: "")
-        parentItem.submenu = shareSubmenu
-        menu.addItem(parentItem)
+        menu.addItem(itemPerm)
 
         return menu
     }

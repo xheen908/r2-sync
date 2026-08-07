@@ -58,5 +58,6 @@ xattr -cr /Applications/R2SyncApp.app || true
 echo "[4/5] Registering Extension with macOS PlugInKit..."
 pluginkit -a "/Applications/${APP_NAME}.app/Contents/PlugIns/R2SyncFinderExtension.appex" || true
 pluginkit -e use -i com.r2sync.app.R2SyncFinderExtension || true
+killall Finder 2>/dev/null || true
 
 echo "✅ Signed with R2DevCert Root Certificate successfully!"
