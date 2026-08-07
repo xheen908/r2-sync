@@ -16,6 +16,8 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { WebView } from "react-native-webview";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import {
   Cloud,
   Folder,
@@ -70,7 +72,8 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   const [isImageLoading, setIsImageLoading] = useState(false);
 
   const [isPdfPreviewVisible, setIsPdfPreviewVisible] = useState(false);
-  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewPdfHtml, setPreviewPdfHtml] = useState<string | null>(null);
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
 
   const loadData = async () => {
     try {
@@ -175,22 +178,104 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     const isImage = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp"].includes(fileExt);
     const isPdf = fileExt === "pdf";
 
-    const viewUrl = `${cfg.serverUrl}/api/files/download?filePath=${encodeURIComponent(item.path)}&inline=1`;
+    const downloadUrl = `${cfg.serverUrl}/api/files/download?filePath=${encodeURIComponent(item.path)}`;
 
     if (isImage) {
       setSelectedFile(item);
-      setPreviewImageUrl(viewUrl);
+      setPreviewImageUrl(`${downloadUrl}&inline=1`);
       setIsImageLoading(true);
       setIsImagePreviewVisible(true);
     } else if (isPdf) {
       setSelectedFile(item);
+      setIsPdfLoading(true);
+
       try {
-        const shareUrl = await generateShareLink(item.path, 1, false);
-        setPreviewPdfUrl(shareUrl);
-      } catch (err) {
-        setPreviewPdfUrl(viewUrl);
+        const sanitizedFilename = item.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const localUri = `${FileSystem.cacheDirectory}${sanitizedFilename}`;
+        
+        const downloadRes = await FileSystem.downloadAsync(downloadUrl, localUri);
+        
+        if (await Sharing.isAvailableAsync()) {
+          setIsPdfLoading(false);
+          await Sharing.shareAsync(downloadRes.uri, {
+            mimeType: "application/pdf",
+            dialogTitle: item.filename,
+            UTI: "com.adobe.pdf",
+          });
+          return;
+        }
+
+        const base64Data = await FileSystem.readAsStringAsync(downloadRes.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        const htmlContent = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+            <style>
+              * { box-sizing: border-box; }
+              body { margin: 0; padding: 12px; background-color: #0F172A; display: flex; flex-direction: column; align-items: center; }
+              #loading { color: #F38020; font-family: -apple-system, Roboto, sans-serif; font-size: 15px; margin-top: 50px; font-weight: 700; text-align: center; }
+              #pdf-container { width: 100%; display: flex; flex-direction: column; align-items: center; }
+              canvas { width: 100% !important; height: auto !important; margin-bottom: 14px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+            </style>
+          </head>
+          <body>
+            <div id="loading">📄 PDF wird verarbeitet...</div>
+            <div id="pdf-container"></div>
+            <script>
+              pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+              
+              try {
+                const rawData = atob("${base64Data}");
+                const bytes = new Uint8Array(rawData.length);
+                for (let i = 0; i < rawData.length; i++) {
+                  bytes[i] = rawData.charCodeAt(i);
+                }
+
+                pdfjsLib.getDocument({ data: bytes }).promise.then(function(pdf) {
+                  document.getElementById('loading').style.display = 'none';
+                  const container = document.getElementById('pdf-container');
+                  
+                  function renderNextPage(pageNum) {
+                    if (pageNum > pdf.numPages) return;
+                    pdf.getPage(pageNum).then(function(page) {
+                      const viewport = page.getViewport({ scale: 1.5 });
+                      const canvas = document.createElement('canvas');
+                      const context = canvas.getContext('2d');
+                      canvas.height = viewport.height;
+                      canvas.width = viewport.width;
+                      container.appendChild(canvas);
+
+                      page.render({ canvasContext: context, viewport: viewport }).promise.then(function() {
+                        renderNextPage(pageNum + 1);
+                      });
+                    });
+                  }
+
+                  renderNextPage(1);
+                }).catch(function(err) {
+                  document.getElementById('loading').innerHTML = '❌ Fehler beim Rendering: ' + (err.message || String(err));
+                  document.getElementById('loading').style.color = '#EF4444';
+                });
+              } catch (e) {
+                document.getElementById('loading').innerHTML = '❌ Base64 Fehler: ' + e.message;
+              }
+            </script>
+          </body>
+          </html>
+        `;
+
+        setPreviewPdfHtml(htmlContent);
+        setIsPdfPreviewVisible(true);
+      } catch (err: any) {
+        Alert.alert("PDF Fehler", err?.message || "PDF konnte nicht geladen werden.");
+      } finally {
+        setIsPdfLoading(false);
       }
-      setIsPdfPreviewVisible(true);
     } else {
       setSelectedFile(item);
       setIsActionModalVisible(true);
@@ -486,8 +571,8 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         </Modal>
       )}
 
-      {/* Fullscreen In-App PDF Viewer Modal */}
-      {selectedFile && previewPdfUrl && (
+      {/* Fullscreen In-App PDF Base64 Canvas Viewer Modal */}
+      {selectedFile && isPdfPreviewVisible && (
         <Modal
           visible={isPdfPreviewVisible}
           transparent
@@ -509,17 +594,24 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
               </TouchableOpacity>
             </View>
 
-            {/* In-App PDF WebView */}
+            {/* HTML5 Base64 Canvas WebView */}
             <View style={styles.viewerBody}>
-              <WebView
-                source={{ uri: previewPdfUrl }}
-                style={styles.fullPdf}
-                startInLoadingState
-                renderLoading={() => (
-                  <ActivityIndicator size="large" color="#F38020" style={StyleSheet.absoluteFill} />
-                )}
-                onError={() => Alert.alert("PDF Laden", "PDF konnte nicht im Viewer geladen werden.")}
-              />
+              {isPdfLoading && (
+                <ActivityIndicator size="large" color="#F38020" style={StyleSheet.absoluteFill} />
+              )}
+              {previewPdfHtml ? (
+                <WebView
+                  source={{ html: previewPdfHtml }}
+                  style={styles.fullPdf}
+                  originWhitelist={["*"]}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  startInLoadingState
+                  renderLoading={() => (
+                    <ActivityIndicator size="large" color="#F38020" style={StyleSheet.absoluteFill} />
+                  )}
+                />
+              ) : null}
             </View>
 
             {/* Action Footer */}
