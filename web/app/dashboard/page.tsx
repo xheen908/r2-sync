@@ -137,7 +137,7 @@ export default function DashboardPage() {
   // Context Menu & Modals state
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [infoModal, setInfoModal] = useState<FileItem | null>(null);
-  const [renameModal, setRenameModal] = useState<FileItem | null>(null);
+  const [renameModal, setRenameModal] = useState<{ path: string; filename: string; isFolder?: boolean } | null>(null);
   const [newFilenameInput, setNewFilenameInput] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [previewModalFile, setPreviewModalFile] = useState<FileItem | null>(null);
@@ -379,17 +379,37 @@ export default function DashboardPage() {
         body: JSON.stringify({
           oldPath: renameModal.path,
           newFilename: newFilenameInput.trim(),
+          isFolder: renameModal.isFolder,
         }),
       });
 
       if (res.ok) {
         setRenameModal(null);
         fetchFiles();
+      } else {
+        const data = await res.json();
+        if (data.error) alert(data.error);
       }
     } catch (err) {
-      console.error("Error renaming file:", err);
+      console.error("Error renaming:", err);
     } finally {
       setRenaming(false);
+    }
+  };
+
+  const handleDeleteFolder = async (folder: DirectoryRow) => {
+    if (!confirm(`Möchtest du den Ordner "${folder.name}" und ALLE darin enthaltenen Dateien wirklich unwiderruflich aus R2 löschen?`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/files?filePath=${encodeURIComponent(folder.fullPath)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchFiles();
+      }
+    } catch (err) {
+      console.error("Error deleting folder", err);
     }
   };
 
@@ -1224,6 +1244,37 @@ export default function DashboardPage() {
                 <Share2 className="w-4 h-4 text-orange-400 group-hover:text-white" />
                 <span>Ordner freigeben...</span>
               </button>
+
+              <button
+                onClick={() => {
+                  const folder = contextMenu.row as DirectoryRow;
+                  setRenameModal({
+                    path: folder.fullPath,
+                    filename: folder.name,
+                    isFolder: true,
+                  });
+                  setNewFilenameInput(folder.name);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors text-left font-medium"
+              >
+                <Edit3 className="w-4 h-4 text-emerald-400 group-hover:text-white" />
+                <span>Ordner umbenennen...</span>
+              </button>
+
+              <div className="h-px bg-slate-800 my-1" />
+
+              <button
+                onClick={() => {
+                  const folder = contextMenu.row as DirectoryRow;
+                  handleDeleteFolder(folder);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-500 hover:text-white text-red-400 transition-colors text-left font-medium"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Ordner löschen</span>
+              </button>
             </>
           )}
         </div>
@@ -1242,7 +1293,9 @@ export default function DashboardPage() {
                 <Edit3 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-white text-lg">Datei umbenennen</h3>
+                <h3 className="font-bold text-white text-lg">
+                  {renameModal.isFolder ? "Ordner umbenennen" : "Datei umbenennen"}
+                </h3>
                 <p className="text-xs text-slate-400 truncate max-w-xs">{renameModal.filename}</p>
               </div>
             </div>
@@ -1250,7 +1303,7 @@ export default function DashboardPage() {
             <form onSubmit={handleRenameSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                  Neuer Dateiname:
+                  {renameModal.isFolder ? "Neuer Ordnername:" : "Neuer Dateiname:"}
                 </label>
                 <input
                   type="text"
