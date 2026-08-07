@@ -21,8 +21,12 @@
     },
     "android": {
       "package": "com.r2sync.mobile",
+      "navigationBar": {
+        "backgroundColor": "#0B1120",
+        "barStyle": "light-content"
+      },
       "adaptiveIcon": {
-        "backgroundColor": "#0F172A",
+        "backgroundColor": "#F67E01",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "permissions": [

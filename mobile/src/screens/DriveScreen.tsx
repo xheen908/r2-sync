@@ -51,6 +51,7 @@ import {
 import {
   subscribeToMediaChanges,
   runAutoPhotoSync,
+  registerBackgroundPhotoSyncTask,
   SyncProgressStatus,
 } from "../services/photoSync";
 import { AppState } from "react-native";
@@ -99,6 +100,9 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   useEffect(() => {
     loadData();
     
+    // Register background task for Android 15/16 compliance
+    registerBackgroundPhotoSyncTask();
+
     // Run photo sync once on app launch
     runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
 
@@ -469,7 +473,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   const statusBarHeight = Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0;
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0B1120" translucent />
 
       {/* Header Bar */}
@@ -538,6 +542,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
 
       {/* File List */}
       <FlatList
+        style={{ flex: 1 }}
         data={getDisplayItems()}
         keyExtractor={(item: any) => item.path || item.name || item.filename}
         renderItem={renderItem}
@@ -561,12 +566,11 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       {selectedFile && previewImageUrl && (
         <Modal
           visible={isImagePreviewVisible}
-          transparent
-          statusBarTranslucent
+          transparent={false}
           animationType="fade"
           onRequestClose={() => setIsImagePreviewVisible(false)}
         >
-          <View style={styles.viewerContainer}>
+          <SafeAreaView style={styles.viewerContainer}>
             {/* Header */}
             <View style={[styles.viewerHeader, { paddingTop: statusBarHeight + 12 }]}>
               <Text style={styles.viewerTitle} numberOfLines={1}>
@@ -615,7 +619,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
                 <Text style={[styles.viewerActionText, styles.deleteBtnText]}>Löschen</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </SafeAreaView>
         </Modal>
       )}
 
@@ -623,12 +627,11 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       {selectedFile && isPdfPreviewVisible && (
         <Modal
           visible={isPdfPreviewVisible}
-          transparent
-          statusBarTranslucent
+          transparent={false}
           animationType="fade"
           onRequestClose={() => setIsPdfPreviewVisible(false)}
         >
-          <View style={styles.viewerContainer}>
+          <SafeAreaView style={styles.viewerContainer}>
             {/* Header */}
             <View style={[styles.viewerHeader, { paddingTop: statusBarHeight + 12 }]}>
               <Text style={styles.viewerTitle} numberOfLines={1}>
@@ -691,7 +694,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
                 <Text style={[styles.viewerActionText, styles.deleteBtnText]}>Löschen</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </SafeAreaView>
         </Modal>
       )}
 
@@ -936,14 +939,14 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           </TouchableOpacity>
         </Modal>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0B1120",
+    backgroundColor: "#0F172A",
   },
   header: {
     flexDirection: "row",
@@ -1040,6 +1043,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 16,
+    paddingBottom: 40,
   },
   itemCard: {
     flexDirection: "row",
@@ -1197,7 +1201,7 @@ const styles = StyleSheet.create({
   },
   viewerContainer: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: "#0F172A",
   },
   viewerHeader: {
     flexDirection: "row",
@@ -1205,7 +1209,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingBottom: 16,
-    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    backgroundColor: "#0F172A",
     borderBottomWidth: 1,
     borderBottomColor: "#1E293B",
   },
@@ -1237,8 +1241,10 @@ const styles = StyleSheet.create({
   viewerFooter: {
     flexDirection: "row",
     justifyContent: "space-around",
-    padding: 16,
-    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: Platform.OS === "android" ? 54 : 32,
+    backgroundColor: "#0F172A",
     borderTopWidth: 1,
     borderTopColor: "#1E293B",
   },

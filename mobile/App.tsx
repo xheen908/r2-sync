@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, View, ActivityIndicator } from "react-native";
+import * as NavigationBar from "expo-navigation-bar";
+import { StyleSheet, View, ActivityIndicator, Platform } from "react-native";
 import { getSavedConfig, ApiConfig } from "./src/services/api";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { DriveScreen } from "./src/screens/DriveScreen";
@@ -21,6 +22,10 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (Platform.OS === "android" && NavigationBar.setBackgroundColorAsync) {
+      NavigationBar.setBackgroundColorAsync("#0F172A").catch(() => {});
+      NavigationBar.setButtonStyleAsync("light").catch(() => {});
+    }
     checkAuthStatus();
   }, []);
 
