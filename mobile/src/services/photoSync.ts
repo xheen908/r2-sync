@@ -19,6 +19,19 @@ export async function requestMediaPermissions(): Promise<boolean> {
   }
 }
 
+export function subscribeToMediaChanges(onChange: () => void): { remove: () => void } {
+  try {
+    if (typeof MediaLibrary.addListener === "function") {
+      return MediaLibrary.addListener(() => {
+        onChange();
+      });
+    }
+  } catch (err) {
+    console.warn("MediaLibrary.addListener error:", err);
+  }
+  return { remove: () => {} };
+}
+
 export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus) => void): Promise<number> {
   try {
     const hasPerms = await requestMediaPermissions();
@@ -50,7 +63,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       isSyncing: true,
       totalNew: newAssets.length,
       uploadedCount: 0,
-      statusText: `${newAssets.length} neue Fotos erkannt. Sichere in Cloud...`,
+      statusText: `${newAssets.length} neue(s) Foto(s) erkannt. Sichere in Cloud...`,
     });
 
     let successCount = 0;

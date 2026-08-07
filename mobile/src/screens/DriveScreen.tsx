@@ -18,7 +18,12 @@ import {
   clearConfig,
   FileItem,
 } from "../services/api";
-import { runAutoPhotoSync, SyncProgressStatus } from "../services/photoSync";
+import {
+  subscribeToMediaChanges,
+  runAutoPhotoSync,
+  SyncProgressStatus,
+} from "../services/photoSync";
+import { AppState } from "react-native";
 
 interface DriveScreenProps {
   onLogout: () => void;
@@ -50,15 +55,38 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
 
   useEffect(() => {
     loadData();
-    // Run initial automatic camera roll photo detection on app launch
-    runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
+    
+    const triggerSync = () => {
+      runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
+    };
 
-    // Live refresh polling every 4 seconds
+    triggerSync();
+
+    // 1. Listen for new photos added to Camera Roll in real-time
+    const mediaSub = subscribeToMediaChanges(() => {
+      console.log("[DriveScreen] Real-time photo addition detected in Camera Roll");
+      triggerSync();
+    });
+
+    // 2. Listen for AppState changes (e.g. returning to R2Sync from Camera app)
+    const appStateSub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        console.log("[DriveScreen] App became active, triggering photo sync");
+        triggerSync();
+      }
+    });
+
+    // 3. Periodic background sync check every 4 seconds
     const interval = setInterval(() => {
       loadData();
+      triggerSync();
     }, 4000);
 
-    return () => clearInterval(interval);
+    return () => {
+      mediaSub.remove();
+      appStateSub.remove();
+      clearInterval(interval);
+    };
   }, []);
 
   // Compute current folder contents & subfolders
