@@ -14,6 +14,7 @@ import {
   Modal,
   Image,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import * as FileSystem from "expo-file-system/legacy";
@@ -66,6 +67,9 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   const [selectedFile, setSelectedFile] = useState<any | null>(null);
   const [isActionModalVisible, setIsActionModalVisible] = useState(false);
   const [isMoveModalVisible, setIsMoveModalVisible] = useState(false);
+  const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
+  const [renameInputValue, setRenameInputValue] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
   
   // Viewer Modals State
   const [isImagePreviewVisible, setIsImagePreviewVisible] = useState(false);
@@ -328,33 +332,35 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
 
   const handleRename = (file: any) => {
     setIsActionModalVisible(false);
+    setSelectedFile(file);
     const currentName = file.filename || file.name || "";
-    
-    Alert.prompt(
-      "Umbenennen",
-      `Neuen Namen eingeben für "${currentName}":`,
-      [
-        { text: "Abbrechen", style: "cancel" },
-        {
-          text: "Speichern",
-          onPress: async (newFilename?: string) => {
-            if (!newFilename || !newFilename.trim() || newFilename.trim() === currentName) return;
-            try {
-              const success = await renameFileOnVPS(file.path, newFilename.trim(), !!file.isFolder);
-              if (success) {
-                await loadData();
-              } else {
-                Alert.alert("Fehler", "Umbenennen fehlgeschlagen.");
-              }
-            } catch (err: any) {
-              Alert.alert("Fehler", err?.message || "Umbenennen fehlgeschlagen.");
-            }
-          },
-        },
-      ],
-      "plain-text",
-      currentName
-    );
+    setRenameInputValue(currentName);
+    setIsRenameModalVisible(true);
+  };
+
+  const handleExecuteRename = async () => {
+    if (!selectedFile || !renameInputValue.trim()) return;
+    const currentName = selectedFile.filename || selectedFile.name || "";
+    if (renameInputValue.trim() === currentName) {
+      setIsRenameModalVisible(false);
+      return;
+    }
+
+    try {
+      setIsRenaming(true);
+      const success = await renameFileOnVPS(selectedFile.path, renameInputValue.trim(), !!selectedFile.isFolder);
+      setIsRenaming(false);
+      setIsRenameModalVisible(false);
+      if (success) {
+        await loadData();
+      } else {
+        Alert.alert("Fehler", "Umbenennen fehlgeschlagen.");
+      }
+    } catch (err: any) {
+      setIsRenaming(false);
+      setIsRenameModalVisible(false);
+      Alert.alert("Fehler", err?.message || "Umbenennen fehlgeschlagen.");
+    }
   };
 
   const handleDelete = (filePath: string) => {
@@ -847,6 +853,85 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
               >
                 <Text style={styles.cancelBtnText}>Abbrechen</Text>
               </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Rename Modal (Cross-Platform Android & iOS) */}
+      {selectedFile && (
+        <Modal
+          visible={isRenameModalVisible}
+          transparent
+          statusBarTranslucent
+          animationType="fade"
+          onRequestClose={() => setIsRenameModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setIsRenameModalVisible(false)}
+          >
+            <TouchableOpacity activeOpacity={1} style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Edit2 size={22} color="#38BDF8" strokeWidth={2} style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalTitle}>Umbenennen</Text>
+                  <Text style={styles.modalSubtitle} numberOfLines={1}>
+                    Neuen Namen eingeben:
+                  </Text>
+                </View>
+              </View>
+
+              <TextInput
+                style={{
+                  backgroundColor: "#1E293B",
+                  color: "#F8FAFC",
+                  borderRadius: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  fontSize: 16,
+                  borderWidth: 1,
+                  borderColor: "#334155",
+                  marginBottom: 16,
+                }}
+                value={renameInputValue}
+                onChangeText={setRenameInputValue}
+                autoFocus
+                selectTextOnFocus
+                placeholder="Neuer Name"
+                placeholderTextColor="#64748B"
+              />
+
+              <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+                <TouchableOpacity
+                  style={[styles.cancelBtn, { marginTop: 0, paddingHorizontal: 16, marginRight: 8 }]}
+                  activeOpacity={0.8}
+                  onPress={() => setIsRenameModalVisible(false)}
+                >
+                  <Text style={styles.cancelBtnText}>Abbrechen</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: "#F38020",
+                    borderRadius: 10,
+                    paddingHorizontal: 20,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  activeOpacity={0.8}
+                  onPress={handleExecuteRename}
+                  disabled={isRenaming}
+                >
+                  {isRenaming ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 15 }}>Speichern</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
