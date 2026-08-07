@@ -58,13 +58,26 @@ final class R2StorageService {
             throw NSError(domain: "R2StorageService", code: 401, userInfo: [NSLocalizedDescriptionKey: "Client not configured"])
         }
 
+        // 1. Delete exact key
         let input = DeleteObjectInput(
             bucket: bucketName,
             key: relativePath
         )
+        _ = try? await s3Client.deleteObject(input: input)
+        print("[R2StorageService] Deleted remote file key: \(relativePath)")
 
-        _ = try await s3Client.deleteObject(input: input)
-        print("[R2StorageService] Successfully deleted remote file \(relativePath) from R2 bucket \(bucketName)")
+        // 2. Delete prefix folder objects if relativePath is a directory
+        let prefix = relativePath.hasSuffix("/") ? relativePath : relativePath + "/"
+        let listInput = ListObjectsV2Input(bucket: bucketName, prefix: prefix)
+        if let listOutput = try? await s3Client.listObjectsV2(input: listInput), let contents = listOutput.contents {
+            for obj in contents {
+                if let key = obj.key {
+                    let delInput = DeleteObjectInput(bucket: bucketName, key: key)
+                    _ = try? await s3Client.deleteObject(input: delInput)
+                    print("[R2StorageService] Deleted folder item: \(key)")
+                }
+            }
+        }
     }
 
     func downloadFile(relativePath: String, bucketName: String, destinationURL: URL) async throws {

@@ -119,14 +119,32 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "filePath parameter is required" }, { status: 400 });
   }
 
-  // 1. Delete object from Cloudflare R2
+  const prefix = filePath.endsWith("/") ? filePath : `${filePath}/`;
+
+  // 1. Delete object(s) from Cloudflare R2
   try {
     const { s3Client, bucketName } = await getS3Client();
+
+    // Delete exact object
     const deleteCmd = new DeleteObjectCommand({
       Bucket: bucketName,
       Key: filePath,
     });
     await s3Client.send(deleteCmd);
+
+    // Delete prefix folder objects if any
+    const listCmd = new ListObjectsV2Command({
+      Bucket: bucketName,
+      Prefix: prefix,
+    });
+    const res = await s3Client.send(listCmd);
+    if (res.Contents) {
+      for (const item of res.Contents) {
+        if (item.Key) {
+          await s3Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: item.Key }));
+        }
+      }
+    }
   } catch (r2Err) {
     console.warn("File delete API: R2 delete failed:", r2Err);
   }
@@ -135,8 +153,8 @@ export async function DELETE(request: Request) {
   try {
     const { getDb } = await import("@/lib/db");
     const db = await getDb();
-    await db.run("DELETE FROM files WHERE path = ?", [filePath]);
-    await db.run("DELETE FROM share_links WHERE file_path = ?", [filePath]);
+    await db.run("DELETE FROM files WHERE path = ? OR path LIKE ?", [filePath, `${prefix}%`]);
+    await db.run("DELETE FROM share_links WHERE file_path = ? OR file_path LIKE ?", [filePath, `${prefix}%`]);
   } catch (dbErr) {
     console.warn("File delete API: SQLite record delete failed:", dbErr);
   }
