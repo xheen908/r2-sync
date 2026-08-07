@@ -25,10 +25,11 @@ ENV NEXT_TELEMETRY_DISABLED 1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-COPY --from=builder /app/public ./public
+# Create required runtime directories with proper permissions
+RUN mkdir -p /app/public /app/data && chown -R nextjs:nodejs /app
+
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/data ./data
 
 USER nextjs
 
