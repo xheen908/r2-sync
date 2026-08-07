@@ -18,6 +18,8 @@ import {
   CheckSquare,
   Square,
   FileCheck,
+  Eye,
+  X,
 } from "lucide-react";
 
 interface FolderFileItem {
@@ -47,10 +49,21 @@ export default function PublicSharePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
+  const [previewModalFile, setPreviewModalFile] = useState<{ path: string; filename: string; size: number } | null>(null);
 
   // Folder File Picker state
   const [folderSearch, setFolderSearch] = useState("");
   const [selectedFilePaths, setSelectedFilePaths] = useState<string[]>([]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPreviewModalFile(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (!shareId) return;
@@ -305,6 +318,24 @@ export default function PublicSharePage() {
                               {formatBytes(file.size)}
                             </span>
 
+                            {(() => {
+                              const ext = file.filename.split(".").pop()?.toLowerCase() || "";
+                              const isPreviewable = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic", "pdf"].includes(ext);
+                              if (!isPreviewable) return null;
+                              return (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPreviewModalFile({ path: file.path, filename: file.filename, size: file.size });
+                                  }}
+                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs flex items-center gap-1 transition-all"
+                                  title="Vorschau anzeigen"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-orange-400" />
+                                </button>
+                              );
+                            })()}
+
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -363,7 +394,7 @@ export default function PublicSharePage() {
                       <div className="w-full bg-slate-950/80 p-2 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
                         <iframe
                           src={downloadUrl}
-                          className="w-full h-[65vh] rounded-xl bg-slate-900"
+                          className="w-full h-[65vh] rounded-xl bg-slate-900 border-0"
                           title={shareInfo?.filename}
                         />
                       </div>
@@ -391,6 +422,93 @@ export default function PublicSharePage() {
           <span>Geschützt durch Cloudflare R2 & D1 SQLite</span>
         </div>
       </div>
+
+      {/* FULLSCREEN IMAGE & PDF PREVIEW LIGHTBOX MODAL */}
+      {previewModalFile && (
+        <div
+          onClick={() => setPreviewModalFile(null)}
+          className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-50 flex flex-col items-center justify-between p-4 sm:p-6 animate-fade-in select-none"
+        >
+          {/* Header */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-5xl flex items-center justify-between gap-4 bg-slate-900/90 border border-slate-800 p-4 rounded-2xl shadow-2xl z-10"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <FileText className="w-5 h-5 text-orange-400 shrink-0" />
+              <div className="flex flex-col min-w-0 text-left">
+                <h3 className="font-semibold text-white truncate text-base">
+                  {previewModalFile.filename}
+                </h3>
+                <p className="text-xs text-slate-400 font-mono">
+                  {formatBytes(previewModalFile.size)}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleDownloadFile(previewModalFile.path, previewModalFile.filename)}
+                className="px-3.5 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold text-xs flex items-center gap-2 transition-colors shadow-lg shadow-orange-500/20"
+              >
+                <Download className="w-4 h-4" />
+                <span>Herunterladen</span>
+              </button>
+
+              <button
+                onClick={() => setPreviewModalFile(null)}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-700 ml-1"
+                title="Schließen (ESC)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Media Body */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 w-full max-w-7xl flex items-center justify-center my-2 overflow-auto relative"
+          >
+            {(() => {
+              const ext = previewModalFile.filename.split(".").pop()?.toLowerCase() || "";
+              const isImage = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic"].includes(ext);
+              const isPdf = ext === "pdf";
+              
+              const downloadUrl = `/api/s/${shareId}/download?inline=1${
+                previewModalFile.path ? `&filePath=${encodeURIComponent(previewModalFile.path)}` : ""
+              }${password ? `&password=${encodeURIComponent(password)}` : ""}`;
+
+              if (isImage) {
+                return (
+                  <img
+                    src={downloadUrl}
+                    alt={previewModalFile.filename}
+                    className="max-h-[85vh] max-w-[95vw] w-auto h-auto object-contain rounded-2xl shadow-2xl border border-slate-800/80"
+                  />
+                );
+              }
+
+              if (isPdf) {
+                return (
+                  <iframe
+                    src={downloadUrl}
+                    className="w-full h-[85vh] rounded-2xl border border-slate-800 shadow-2xl bg-slate-900 border-0"
+                    title={previewModalFile.filename}
+                  />
+                );
+              }
+
+              return null;
+            })()}
+          </div>
+
+          {/* Footer hint */}
+          <div className="text-xs text-slate-500 font-medium">
+            Klicke außerhalb oder drücke <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-300 font-mono">ESC</kbd> zum Schließen
+          </div>
+        </div>
+      )}
     </div>
   );
 }
