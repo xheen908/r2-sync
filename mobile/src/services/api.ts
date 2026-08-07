@@ -56,31 +56,12 @@ export function cleanServerUrl(url: string): string {
 
 export async function loginAndFetchConfig(serverUrl: string, username: string, password: string): Promise<ApiConfig> {
   const baseUrl = cleanServerUrl(serverUrl);
-  let response: Response;
 
-  try {
-    response = await fetch(`${baseUrl}/api/account/sync-config`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-  } catch (netErr: any) {
-    const errMsg = netErr?.message || String(netErr);
-    if (errMsg.includes("SSLHandshakeException") || errMsg.includes("Chain validation")) {
-      const httpUrl = baseUrl.replace("https://", "http://");
-      try {
-        response = await fetch(`${httpUrl}/api/account/sync-config`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
-        });
-      } catch (fallbackErr) {
-        throw new Error("Zertifikatsfehler auf dem Emulator. Verwende auf echten Geräten https oder gib http:// an.");
-      }
-    } else {
-      throw new Error(errMsg);
-    }
-  }
+  const response = await fetch(`${baseUrl}/api/account/sync-config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
 
   if (!response.ok) {
     const errData = await response.json().catch(() => ({}));
@@ -105,7 +86,8 @@ export async function fetchFilesList(): Promise<FileItem[]> {
   const cfg = await getSavedConfig();
   if (!cfg) throw new Error("Nicht angemeldet");
 
-  const response = await fetch(`${cfg.serverUrl}/api/files`);
+  const url = `${cfg.serverUrl}/api/files`;
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Fehler beim Laden der Dateiliste (${response.status})`);
   }
