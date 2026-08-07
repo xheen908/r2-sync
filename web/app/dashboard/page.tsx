@@ -43,6 +43,7 @@ import {
   Database,
   Globe,
   Sliders,
+  ChevronDown,
 } from "lucide-react";
 
 interface FileItem {
@@ -98,13 +99,17 @@ interface R2SettingsData {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"files" | "settings">("files");
 
   // Files & Navigation state
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentPath, setCurrentPath] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Settings Popover & Modals state
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [r2SettingsModalOpen, setR2SettingsModalOpen] = useState(false);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
 
   // Settings & R2 Connection state
   const [r2Config, setR2Config] = useState<R2SettingsData | null>(null);
@@ -196,9 +201,15 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const handleGlobalClick = () => setContextMenu(null);
+    const handleGlobalClick = () => {
+      setContextMenu(null);
+      setPopoverOpen(false);
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setContextMenu(null);
+      if (e.key === "Escape") {
+        setContextMenu(null);
+        setPopoverOpen(false);
+      }
     };
     window.addEventListener("click", handleGlobalClick);
     window.addEventListener("keydown", handleKeyDown);
@@ -277,7 +288,7 @@ export default function DashboardPage() {
       });
 
       if (res.ok) {
-        setSettingsStatus({ type: "success", message: "Cloudflare Einstellungen erfolgreich gespeichert!" });
+        setSettingsStatus({ type: "success", message: "Einstellungen erfolgreich gespeichert!" });
         setFormSecretAccessKey("");
         fetchSettings();
         fetchFiles();
@@ -589,11 +600,11 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* MODERN TOP NAVBAR HEADER */}
+      {/* SLEEK HEADER BAR WITH POPOVER MENU */}
       <header className="h-16 border-b border-slate-800/90 bg-slate-900/80 backdrop-blur-xl px-6 flex items-center justify-between sticky top-0 z-30">
-        {/* Brand & Connection Status Pill */}
+        {/* Left Brand & R2 Status Badge */}
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentPath("")}>
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-lg shadow-orange-500/25">
               <Cloud className="w-6 h-6 text-white" />
             </div>
@@ -605,62 +616,37 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* R2 Connection Live Pill Badge */}
+          {/* R2 Connection Pill Badge */}
           <div
-            onClick={() => setActiveTab("settings")}
+            onClick={(e) => {
+              e.stopPropagation();
+              setR2SettingsModalOpen(true);
+            }}
             className={`cursor-pointer hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
               isConnected
                 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
                 : "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20"
             }`}
-            title={isConnected ? "Cloudflare R2 Verbunden" : r2Error || "Verbindung prüfen"}
+            title={isConnected ? "Cloudflare R2 Verbunden" : r2Error || "Einstellungen öffnen"}
           >
             <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
             <span>{isConnected ? `R2 Verbunden (${r2Config?.bucketName || "easyfisk-docs"})` : "R2 Getrennt"}</span>
           </div>
         </div>
 
-        {/* Navigation Tabs Header */}
-        <div className="flex items-center gap-2 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80">
-          <button
-            onClick={() => setActiveTab("files")}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              activeTab === "files"
-                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/20"
-                : "text-slate-400 hover:text-white hover:bg-slate-900"
-            }`}
-          >
-            <Folder className="w-3.5 h-3.5" />
-            <span>Dateimanager</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("settings")}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              activeTab === "settings"
-                ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/20"
-                : "text-slate-400 hover:text-white hover:bg-slate-900"
-            }`}
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>Konto & Einstellungen</span>
-          </button>
-        </div>
-
-        {/* Right Actions */}
+        {/* Right Action Icons & Settings Popover Menu */}
         <div className="flex items-center gap-3">
-          {activeTab === "files" && (
-            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold cursor-pointer shadow-md shadow-orange-500/20 transition-all active:scale-95">
-              <Upload className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Hochladen</span>
-              <input
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => e.target.files && uploadFiles(e.target.files)}
-              />
-            </label>
-          )}
+          {/* File Upload Button */}
+          <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold cursor-pointer shadow-md shadow-orange-500/20 transition-all active:scale-95">
+            <Upload className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Hochladen</span>
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+            />
+          </label>
 
           <button
             onClick={fetchFiles}
@@ -670,353 +656,329 @@ export default function DashboardPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium transition-colors border border-slate-700/50"
-            title="Abmelden"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Abmelden</span>
-          </button>
+          {/* SETTINGS GEAR ICON WITH POPOVER MENU */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setPopoverOpen(!popoverOpen);
+              }}
+              className={`flex items-center gap-2 p-2 rounded-xl border transition-all ${
+                popoverOpen
+                  ? "bg-orange-500/20 text-orange-400 border-orange-500/40"
+                  : "bg-slate-800/80 hover:bg-slate-700 text-slate-200 border-slate-700/60"
+              }`}
+              title="Einstellungen & Konto"
+            >
+              <Settings className={`w-4 h-4 transition-transform ${popoverOpen ? "rotate-90 text-orange-400" : ""}`} />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+
+            {/* POPOVER DROPDOWN MENU */}
+            {popoverOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 mt-2 w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl z-50 p-2 text-xs text-slate-200 animate-fade-in"
+              >
+                {/* Admin User Header */}
+                <div className="px-3 py-2.5 mb-1.5 border-b border-slate-800 flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold uppercase">
+                    {currentUsername.substring(0, 2)}
+                  </div>
+                  <div className="flex flex-col truncate">
+                    <span className="font-semibold text-white truncate">{currentUsername}</span>
+                    <span className="text-[10px] text-slate-400">Administrator</span>
+                  </div>
+                </div>
+
+                {/* Popover Items */}
+                <button
+                  onClick={() => {
+                    setPopoverOpen(false);
+                    setR2SettingsModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-800 text-slate-200 hover:text-white transition-colors text-left font-medium"
+                >
+                  <Database className="w-4 h-4 text-amber-400" />
+                  <span>Cloudflare R2 Keys</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setPopoverOpen(false);
+                    setAccountModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-800 text-slate-200 hover:text-white transition-colors text-left font-medium"
+                >
+                  <User className="w-4 h-4 text-orange-400" />
+                  <span>Konto & Sicherheit</span>
+                </button>
+
+                <div className="h-px bg-slate-800 my-1" />
+
+                <button
+                  onClick={() => {
+                    setPopoverOpen(false);
+                    handleLogout();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-red-500/20 text-red-400 transition-colors text-left font-medium"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Abmelden</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* VIEW 1: FILE MANAGER */}
-      {activeTab === "files" && (
-        <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
-          {/* Toolbar & Search */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/80">
-            {/* Breadcrumb Navigation */}
-            <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (draggedFileItem) {
-                  moveFileToFolder(draggedFileItem, "");
-                  setDraggedFileItem(null);
-                }
-              }}
-              className="flex items-center gap-1.5 overflow-x-auto text-sm text-slate-300 w-full sm:w-auto py-1"
+      {/* MAIN FILE EXPLORER */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
+        {/* Toolbar & Search */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/80">
+          {/* Breadcrumb Navigation */}
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (draggedFileItem) {
+                moveFileToFolder(draggedFileItem, "");
+                setDraggedFileItem(null);
+              }
+            }}
+            className="flex items-center gap-1.5 overflow-x-auto text-sm text-slate-300 w-full sm:w-auto py-1"
+          >
+            <button
+              onClick={() => setCurrentPath("")}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${
+                !currentPath ? "bg-orange-500/20 text-orange-400 font-semibold" : "hover:bg-slate-800 text-slate-400"
+              }`}
             >
-              <button
-                onClick={() => setCurrentPath("")}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${
-                  !currentPath ? "bg-orange-500/20 text-orange-400 font-semibold" : "hover:bg-slate-800 text-slate-400"
-                }`}
+              <Home className="w-4 h-4" />
+              <span>Root</span>
+            </button>
+
+            {breadcrumbs.map((b) => (
+              <div
+                key={b.path}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedFileItem) {
+                    moveFileToFolder(draggedFileItem, b.path);
+                    setDraggedFileItem(null);
+                  }
+                }}
+                className="flex items-center gap-1.5"
               >
-                <Home className="w-4 h-4" />
-                <span>Root</span>
-              </button>
-
-              {breadcrumbs.map((b) => (
-                <div
-                  key={b.path}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (draggedFileItem) {
-                      moveFileToFolder(draggedFileItem, b.path);
-                      setDraggedFileItem(null);
-                    }
-                  }}
-                  className="flex items-center gap-1.5"
+                <ChevronRight className="w-4 h-4 text-slate-600 shrink-0" />
+                <button
+                  onClick={() => setCurrentPath(b.path)}
+                  className={`px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap ${
+                    currentPath === b.path
+                      ? "bg-orange-500/20 text-orange-400 font-semibold"
+                      : "hover:bg-slate-800 text-slate-400"
+                  }`}
                 >
-                  <ChevronRight className="w-4 h-4 text-slate-600 shrink-0" />
-                  <button
-                    onClick={() => setCurrentPath(b.path)}
-                    className={`px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap ${
-                      currentPath === b.path
-                        ? "bg-orange-500/20 text-orange-400 font-semibold"
-                        : "hover:bg-slate-800 text-slate-400"
-                    }`}
-                  >
-                    {b.name}
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Search Input */}
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Alle Dateien durchsuchen..."
-                className="w-full bg-slate-950/80 border border-slate-800 focus:border-orange-500 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder-slate-500 outline-none transition-all"
-              />
-            </div>
+                  {b.name}
+                </button>
+              </div>
+            ))}
           </div>
 
-          {/* Back button if inside subfolder */}
-          {currentPath && !searchQuery && (
-            <div className="flex items-center">
-              <button
-                onClick={navigateUp}
-                className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-white px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Übergeordneter Ordner</span>
-              </button>
+          {/* Search Input */}
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Alle Dateien durchsuchen..."
+              className="w-full bg-slate-950/80 border border-slate-800 focus:border-orange-500 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder-slate-500 outline-none transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Back button if inside subfolder */}
+        {currentPath && !searchQuery && (
+          <div className="flex items-center">
+            <button
+              onClick={navigateUp}
+              className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-white px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Übergeordneter Ordner</span>
+            </button>
+          </div>
+        )}
+
+        {/* File Table / Explorer */}
+        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+          {loading ? (
+            <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-3">
+              <RefreshCw className="w-8 h-8 animate-spin text-orange-500" />
+              <p>Dateien und Ordner werden geladen...</p>
             </div>
-          )}
+          ) : displayRows.length === 0 ? (
+            <div className="p-16 text-center text-slate-500 flex flex-col items-center gap-3">
+              <Folder className="w-12 h-12 text-slate-700" />
+              <p className="text-base font-medium">Dieser Ordner ist leer</p>
+              <p className="text-xs text-slate-600">
+                Ziehe Dateien von deinem PC hierher zum Hochladen oder per Rechtsklick Aktionen ausführen.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300 select-none">
+                <thead className="bg-slate-900/90 text-xs uppercase font-semibold text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="py-3.5 px-4">Name</th>
+                    <th className="py-3.5 px-4">Größe / Inhalt</th>
+                    <th className="py-3.5 px-4">Aktualisiert</th>
+                    <th className="py-3.5 px-4 text-right">Aktionen</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {displayRows.map((row, idx) => {
+                    if (row.isFolder) {
+                      const isHoveredTarget = dragOverFolder === row.fullPath;
+                      return (
+                        <tr
+                          key={`folder_${row.fullPath}_${idx}`}
+                          onClick={() => setCurrentPath(row.fullPath)}
+                          onContextMenu={(e) => handleContextMenu(e, row)}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setDragOverFolder(row.fullPath);
+                          }}
+                          onDragLeave={() => setDragOverFolder(null)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOverFolder(null);
 
-          {/* File Table / Explorer */}
-          <div className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-            {loading ? (
-              <div className="p-12 text-center text-slate-400 flex flex-col items-center gap-3">
-                <RefreshCw className="w-8 h-8 animate-spin text-orange-500" />
-                <p>Dateien und Ordner werden geladen...</p>
-              </div>
-            ) : displayRows.length === 0 ? (
-              <div className="p-16 text-center text-slate-500 flex flex-col items-center gap-3">
-                <Folder className="w-12 h-12 text-slate-700" />
-                <p className="text-base font-medium">Dieser Ordner ist leer</p>
-                <p className="text-xs text-slate-600">
-                  Ziehe Dateien von deinem PC hierher zum Hochladen oder per Rechtsklick Aktionen ausführen.
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-300 select-none">
-                  <thead className="bg-slate-900/90 text-xs uppercase font-semibold text-slate-400 border-b border-slate-800">
-                    <tr>
-                      <th className="py-3.5 px-4">Name</th>
-                      <th className="py-3.5 px-4">Größe / Inhalt</th>
-                      <th className="py-3.5 px-4">Aktualisiert</th>
-                      <th className="py-3.5 px-4 text-right">Aktionen</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {displayRows.map((row, idx) => {
-                      if (row.isFolder) {
-                        const isHoveredTarget = dragOverFolder === row.fullPath;
-                        return (
-                          <tr
-                            key={`folder_${row.fullPath}_${idx}`}
-                            onClick={() => setCurrentPath(row.fullPath)}
-                            onContextMenu={(e) => handleContextMenu(e, row)}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              setDragOverFolder(row.fullPath);
-                            }}
-                            onDragLeave={() => setDragOverFolder(null)}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              setDragOverFolder(null);
-
-                              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                                uploadFiles(e.dataTransfer.files, row.fullPath);
-                              } else if (draggedFileItem) {
-                                moveFileToFolder(draggedFileItem, row.fullPath);
-                                setDraggedFileItem(null);
-                              }
-                            }}
-                            className={`cursor-pointer transition-all group ${
-                              isHoveredTarget
-                                ? "bg-orange-500/20 border-2 border-orange-500"
-                                : "hover:bg-slate-800/50"
-                            }`}
-                          >
-                            <td className="py-3.5 px-4 flex items-center gap-3">
-                              <Folder className="w-5 h-5 text-amber-400 fill-amber-400/20 group-hover:scale-110 transition-transform" />
-                              <span className="font-semibold text-slate-200 group-hover:text-amber-400 transition-colors">
-                                {row.name}
+                            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                              uploadFiles(e.dataTransfer.files, row.fullPath);
+                            } else if (draggedFileItem) {
+                              moveFileToFolder(draggedFileItem, row.fullPath);
+                              setDraggedFileItem(null);
+                            }
+                          }}
+                          className={`cursor-pointer transition-all group ${
+                            isHoveredTarget
+                              ? "bg-orange-500/20 border-2 border-orange-500"
+                              : "hover:bg-slate-800/50"
+                          }`}
+                        >
+                          <td className="py-3.5 px-4 flex items-center gap-3">
+                            <Folder className="w-5 h-5 text-amber-400 fill-amber-400/20 group-hover:scale-110 transition-transform" />
+                            <span className="font-semibold text-slate-200 group-hover:text-amber-400 transition-colors">
+                              {row.name}
+                            </span>
+                            {isHoveredTarget && (
+                              <span className="text-[10px] bg-orange-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">
+                                Hier ablegen
                               </span>
-                              {isHoveredTarget && (
-                                <span className="text-[10px] bg-orange-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">
-                                  Hier ablegen
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-400 text-xs">
+                            {row.itemCount} {row.itemCount === 1 ? "Datei" : "Dateien"}
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-500 text-xs">—</td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              onClick={(e) => handleContextMenu(e, row)}
+                              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    } else {
+                      const file = row.item;
+                      return (
+                        <tr
+                          key={file.id}
+                          draggable
+                          onDragStart={() => setDraggedFileItem(file)}
+                          onDragEnd={() => setDraggedFileItem(null)}
+                          onContextMenu={(e) => handleContextMenu(e, row)}
+                          className="hover:bg-slate-800/40 transition-colors group cursor-grab active:cursor-grabbing"
+                        >
+                          <td className="py-3.5 px-4 flex items-center gap-3">
+                            <Move className="w-3.5 h-3.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            {getFileIcon(file.filename)}
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-slate-200 group-hover:text-white transition-colors">
+                                  {file.filename}
+                                </span>
+                                {file.activeSharesCount && file.activeSharesCount > 0 ? (
+                                  <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                    <Share2 className="w-2.5 h-2.5" />
+                                    <span>
+                                      {file.activeSharesCount}{" "}
+                                      {file.activeSharesCount === 1 ? "aktiver Link" : "aktive Links"}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
+                              {searchQuery && (
+                                <span className="text-[11px] text-slate-500 truncate max-w-xs">
+                                  {file.path}
                                 </span>
                               )}
-                            </td>
-                            <td className="py-3.5 px-4 text-slate-400 text-xs">
-                              {row.itemCount} {row.itemCount === 1 ? "Datei" : "Dateien"}
-                            </td>
-                            <td className="py-3.5 px-4 text-slate-500 text-xs">—</td>
-                            <td className="py-3.5 px-4 text-right">
-                              <button
-                                onClick={(e) => handleContextMenu(e, row)}
-                                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-                              >
-                                <MoreVertical className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      } else {
-                        const file = row.item;
-                        return (
-                          <tr
-                            key={file.id}
-                            draggable
-                            onDragStart={() => setDraggedFileItem(file)}
-                            onDragEnd={() => setDraggedFileItem(null)}
-                            onContextMenu={(e) => handleContextMenu(e, row)}
-                            className="hover:bg-slate-800/40 transition-colors group cursor-grab active:cursor-grabbing"
-                          >
-                            <td className="py-3.5 px-4 flex items-center gap-3">
-                              <Move className="w-3.5 h-3.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                              {getFileIcon(file.filename)}
-                              <div className="flex flex-col gap-0.5">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium text-slate-200 group-hover:text-white transition-colors">
-                                    {file.filename}
-                                  </span>
-                                  {file.activeSharesCount && file.activeSharesCount > 0 ? (
-                                    <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                                      <Share2 className="w-2.5 h-2.5" />
-                                      <span>
-                                        {file.activeSharesCount}{" "}
-                                        {file.activeSharesCount === 1 ? "aktiver Link" : "aktive Links"}
-                                      </span>
-                                    </span>
-                                  ) : null}
-                                </div>
-                                {searchQuery && (
-                                  <span className="text-[11px] text-slate-500 truncate max-w-xs">
-                                    {file.path}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-3.5 px-4 text-slate-400 font-mono text-xs">
-                              {formatBytes(file.size)}
-                            </td>
-                            <td className="py-3.5 px-4 text-slate-400 text-xs">
-                              {new Date(file.updatedAt).toLocaleDateString("de-DE", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </td>
-                            <td className="py-3.5 px-4 text-right">
-                              <button
-                                onClick={(e) => handleContextMenu(e, row)}
-                                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-                              >
-                                <MoreVertical className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      }
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </main>
-      )}
-
-      {/* VIEW 2: KONTO & EINSTELLUNGEN MANAGER */}
-      {activeTab === "settings" && (
-        <main className="flex-1 max-w-5xl w-full mx-auto p-6 space-y-8">
-          {/* Card 1: Account Manager */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 shadow-2xl backdrop-blur-md">
-            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-800">
-              <div className="w-10 h-10 rounded-2xl bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center justify-center">
-                <User className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-white">Konto & Sicherheit</h2>
-                <p className="text-xs text-slate-400">Verwalte deinen Admin-Benutzernamen und dein Passwort</p>
-              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-400 font-mono text-xs">
+                            {formatBytes(file.size)}
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-400 text-xs">
+                            {new Date(file.updatedAt).toLocaleDateString("de-DE", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              onClick={(e) => handleContextMenu(e, row)}
+                              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  })}
+                </tbody>
+              </table>
             </div>
+          )}
+        </div>
+      </main>
 
-            {accountStatus && (
-              <div
-                className={`mb-6 p-3.5 rounded-xl text-xs flex items-center gap-2 border ${
-                  accountStatus.type === "success"
-                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                    : "bg-red-500/10 border-red-500/30 text-red-400"
-                }`}
-              >
-                {accountStatus.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                <span>{accountStatus.message}</span>
+      {/* MODAL 1: CLOUDFLARE R2 CREDENTIALS SETTINGS MODAL */}
+      {r2SettingsModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setR2SettingsModalOpen(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-800">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                <Database className="w-5 h-5" />
               </div>
-            )}
-
-            <form onSubmit={handleUpdateAccount} className="space-y-4 max-w-lg">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                  Benutzername
-                </label>
-                <input
-                  type="text"
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  placeholder={`Aktuell: ${currentUsername}`}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                    Neues Passwort
-                  </label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Neues Passwort"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                    Passwort bestätigen
-                  </label>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Wiederholen"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={savingAccount}
-                className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-medium px-5 py-2.5 rounded-xl shadow-lg shadow-orange-500/20 text-xs transition-all active:scale-95 disabled:opacity-50"
-              >
-                {savingAccount ? "Speichere..." : "Konto-Daten aktualisieren"}
-              </button>
-            </form>
-          </div>
-
-          {/* Card 2: Cloudflare R2 Connection Settings GUI */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 shadow-2xl backdrop-blur-md">
-            <div className="flex items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
-                  <Database className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-white">Cloudflare R2 Zugangsdaten</h2>
-                  <p className="text-xs text-slate-400">
-                    Binde deine R2 Keys direkt aus der Web-Oberfläche ein (überschreibt die .env)
-                  </p>
-                </div>
-              </div>
-
-              {/* Status Badge */}
-              <div
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border ${
-                  isConnected
-                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                    : "bg-red-500/10 text-red-400 border-red-500/30"
-                }`}
-              >
-                {isConnected ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                <span>{isConnected ? "S3 R2 Verbunden" : "Verbindung getrennt"}</span>
+                <h3 className="font-bold text-white text-lg">Cloudflare R2 Zugangsdaten</h3>
+                <p className="text-xs text-slate-400">Passe deine R2 Keys direkt im Browser an</p>
               </div>
             </div>
 
@@ -1033,7 +995,7 @@ export default function DashboardPage() {
               </div>
             )}
 
-            <form onSubmit={handleSaveR2Settings} className="space-y-4 max-w-2xl">
+            <form onSubmit={handleSaveR2Settings} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
                   Cloudflare Account ID
@@ -1043,7 +1005,7 @@ export default function DashboardPage() {
                   required
                   value={formAccountId}
                   onChange={(e) => setFormAccountId(e.target.value)}
-                  placeholder="z.B. 10c9109e9e342e2b4fc55e71ddf91c17"
+                  placeholder="Account ID"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white font-mono outline-none focus:border-orange-500"
                 />
               </div>
@@ -1107,19 +1069,123 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setR2SettingsModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+                >
+                  Abbrechen
+                </button>
+
                 <button
                   type="submit"
                   disabled={savingSettings}
-                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold px-6 py-2.5 rounded-xl shadow-lg shadow-orange-500/20 text-xs transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold px-6 py-2.5 rounded-xl shadow-lg shadow-orange-500/20 text-xs transition-all flex items-center gap-2"
                 >
                   <RefreshCw className={`w-4 h-4 ${savingSettings ? "animate-spin" : ""}`} />
-                  <span>{savingSettings ? "Prüfe & Speichere..." : "R2 Verbindung testen & Speichern"}</span>
+                  <span>{savingSettings ? "Prüfe & Speichere..." : "Verbindung testen & Speichern"}</span>
                 </button>
               </div>
             </form>
           </div>
-        </main>
+        </div>
+      )}
+
+      {/* MODAL 2: ACCOUNT MANAGER MODAL */}
+      {accountModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setAccountModalOpen(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-800">
+              <div className="w-10 h-10 rounded-2xl bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center justify-center">
+                <User className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-lg">Konto & Sicherheit</h3>
+                <p className="text-xs text-slate-400">Verwalte deinen Admin-Zugang</p>
+              </div>
+            </div>
+
+            {accountStatus && (
+              <div
+                className={`mb-6 p-3.5 rounded-xl text-xs flex items-center gap-2 border ${
+                  accountStatus.type === "success"
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                    : "bg-red-500/10 border-red-500/30 text-red-400"
+                }`}
+              >
+                {accountStatus.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                <span>{accountStatus.message}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateAccount} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Benutzername
+                </label>
+                <input
+                  type="text"
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  placeholder={`Aktuell: ${currentUsername}`}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Neues Passwort
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Neues Passwort"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Passwort bestätigen
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Wiederholen"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setAccountModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+                >
+                  Abbrechen
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingAccount}
+                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-orange-500/20 text-xs transition-all"
+                >
+                  {savingAccount ? "Speichere..." : "Konto aktualisieren"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* MACOS FINDER CONTEXT MENU */}
