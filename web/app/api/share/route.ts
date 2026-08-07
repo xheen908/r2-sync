@@ -60,8 +60,13 @@ export async function POST(request: Request) {
       console.warn("Share API: R2 backup save failed:", r2Err);
     }
 
-    const origin = new URL(request.url).origin;
-    const shareUrl = `${origin}/s/${shareId}`;
+    const baseUrl = process.env.R2_PUBLIC_DOMAIN_URL ||
+                    (request.headers.get("x-forwarded-host") ? `https://${request.headers.get("x-forwarded-host")}` : null) ||
+                    (request.headers.get("host") && !request.headers.get("host")?.includes("0.0.0.0") ? `https://${request.headers.get("host")}` : null) ||
+                    "https://drive.ocpp-labs.com";
+
+    const cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+    const shareUrl = `${cleanBaseUrl}/s/${shareId}`;
 
     return NextResponse.json({
       success: true,
