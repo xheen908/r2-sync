@@ -27,28 +27,23 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       return 0;
     }
 
-    // Load last synced timestamp & asset IDs
-    const rawLastTime = await AsyncStorage.getItem(STORAGE_KEYS.LAST_SYNC_TIME);
-    const lastSyncTime = rawLastTime ? parseInt(rawLastTime, 10) : 0;
-
     const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
     const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
 
-    // Fetch recent photos sorted by creationTime descending
+    // Fetch recent photos from Camera Roll
     const assetsResult = await MediaLibrary.getAssetsAsync({
-      mediaType: MediaLibrary.MediaType.photo,
-      sortBy: [MediaLibrary.SortBy.creationTime],
-      first: 50,
+      mediaType: "photo",
+      first: 100,
     });
 
-    const newAssets = (assetsResult.assets || []).filter((asset) => {
-      if (!asset || !asset.id) return false;
-      const cTime = asset.creationTime || asset.modificationTime || 0;
-      return cTime > lastSyncTime && !syncedIdsSet.has(asset.id);
+    const assetsList = assetsResult.assets || [];
+    const newAssets = assetsList.filter((asset) => {
+      return asset && asset.id && !syncedIdsSet.has(asset.id);
     });
 
     if (newAssets.length === 0) {
-      onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Fotogalerie ist aktuell" });
+      const msg = assetsList.length === 0 ? "Keine Fotos auf dem Gerät gefunden" : "Fotogalerie ist aktuell";
+      onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: msg });
       return 0;
     }
 
@@ -60,7 +55,6 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     });
 
     let successCount = 0;
-    let latestTimestamp = lastSyncTime;
 
     for (let i = 0; i < newAssets.length; i++) {
       const asset = newAssets[i];
@@ -71,7 +65,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         const uri = assetInfo.localUri || asset.uri;
         const assetTime = asset.creationTime || asset.modificationTime || Date.now();
 
-        // Construct target path e.g. Kamera-Uploads/2026-08/IMG_1234.jpg
+        // Target path: Kamera-Uploads/YYYY-MM/filename.jpg
         const date = new Date(assetTime);
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
         const filename = asset.filename || `photo_${asset.id}.jpg`;
@@ -81,9 +75,6 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         if (uploaded) {
           successCount++;
           syncedIdsSet.add(asset.id);
-          if (assetTime > latestTimestamp) {
-            latestTimestamp = assetTime;
-          }
         }
       } catch (err) {
         console.warn("Error uploading photo asset:", asset.id, err);
@@ -97,10 +88,6 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       });
     }
 
-    // Update saved progress
-    if (latestTimestamp > lastSyncTime) {
-      await AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNC_TIME, latestTimestamp.toString());
-    }
     await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
 
     onProgress?.({

@@ -174,15 +174,26 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
             {currentFolder ? `/${currentFolder}` : "Hauptverzeichnis"}
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.logoutBtn}
-          onPress={async () => {
-            await clearConfig();
-            onLogout();
-          }}
-        >
-          <Text style={styles.logoutBtnText}>Abmelden</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <TouchableOpacity
+            style={styles.syncBtn}
+            onPress={async () => {
+              await runAutoPhotoSync((status) => setSyncStatus(status));
+              loadData();
+            }}
+          >
+            <Text style={styles.syncBtnText}>📸 Fotos sichern</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.logoutBtn}
+            onPress={async () => {
+              await clearConfig();
+              onLogout();
+            }}
+          >
+            <Text style={styles.logoutBtnText}>Abmelden</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Auto Photo Sync Progress Bar */}
@@ -309,6 +320,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#F38020",
     fontWeight: "600",
+  },
+  syncBtn: {
+    backgroundColor: "#F38020",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  syncBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
   logoutBtn: {
     backgroundColor: "#334155",
