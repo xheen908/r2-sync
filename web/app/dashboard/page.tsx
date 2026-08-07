@@ -144,7 +144,7 @@ export default function DashboardPage() {
   // Drag & Drop Upload states
   const [isDraggingExternal, setIsDraggingExternal] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [draggedFileItem, setDraggedFileItem] = useState<FileItem | null>(null);
+  const [draggedItem, setDraggedItem] = useState<ExplorerRow | null>(null);
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   // Share Modal state
@@ -259,21 +259,26 @@ export default function DashboardPage() {
     fetchFiles();
   };
 
-  const moveFileToFolder = async (fileItem: FileItem, targetFolderPath: string) => {
+  const moveItemToFolder = async (item: ExplorerRow, targetFolderPath: string) => {
     try {
+      const payload = item.isFolder
+        ? { sourceFolderPath: item.fullPath, targetFolderPath }
+        : { sourcePath: item.item.path, targetFolderPath };
+
       const res = await fetch("/api/files/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourcePath: fileItem.path,
-          targetFolderPath,
-        }),
+        body: JSON.stringify(payload),
       });
+      
+      const data = await res.json();
       if (res.ok) {
         fetchFiles();
+      } else if (data.error) {
+        alert(data.error);
       }
     } catch (err) {
-      console.error("Error moving file:", err);
+      console.error("Error moving item:", err);
     }
   };
 
@@ -633,9 +638,9 @@ export default function DashboardPage() {
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
-              if (draggedFileItem) {
-                moveFileToFolder(draggedFileItem, "");
-                setDraggedFileItem(null);
+              if (draggedItem) {
+                moveItemToFolder(draggedItem, "");
+                setDraggedItem(null);
               }
             }}
             className="flex items-center gap-1.5 overflow-x-auto text-sm text-slate-300 w-full sm:w-auto py-1"
@@ -656,9 +661,9 @@ export default function DashboardPage() {
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
-                  if (draggedFileItem) {
-                    moveFileToFolder(draggedFileItem, b.path);
-                    setDraggedFileItem(null);
+                  if (draggedItem) {
+                    moveItemToFolder(draggedItem, b.path);
+                    setDraggedItem(null);
                   }
                 }}
                 className="flex items-center gap-1.5"
@@ -734,34 +739,50 @@ export default function DashboardPage() {
                   {displayRows.map((row, idx) => {
                     if (row.isFolder) {
                       const isHoveredTarget = dragOverFolder === row.fullPath;
+                      const isBeingDragged = draggedItem?.isFolder && draggedItem.fullPath === row.fullPath;
+
                       return (
                         <tr
                           key={`folder_${row.fullPath}_${idx}`}
+                          draggable
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData("text/plain", row.fullPath);
+                            setDraggedItem(row);
+                          }}
+                          onDragEnd={() => setDraggedItem(null)}
                           onClick={() => setCurrentPath(row.fullPath)}
                           onContextMenu={(e) => handleContextMenu(e, row)}
                           onDragOver={(e) => {
                             e.preventDefault();
-                            setDragOverFolder(row.fullPath);
+                            e.stopPropagation();
+                            if (!isBeingDragged) {
+                              setDragOverFolder(row.fullPath);
+                            }
                           }}
                           onDragLeave={() => setDragOverFolder(null)}
                           onDrop={(e) => {
                             e.preventDefault();
+                            e.stopPropagation();
                             setDragOverFolder(null);
 
                             if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                               uploadFiles(e.dataTransfer.files, row.fullPath);
-                            } else if (draggedFileItem) {
-                              moveFileToFolder(draggedFileItem, row.fullPath);
-                              setDraggedFileItem(null);
+                            } else if (draggedItem) {
+                              moveItemToFolder(draggedItem, row.fullPath);
+                              setDraggedItem(null);
                             }
                           }}
-                          className={`cursor-pointer transition-all group ${
-                            isHoveredTarget
-                              ? "bg-orange-500/20 border-2 border-orange-500"
-                              : "hover:bg-slate-800/50"
+                          className={`transition-all group ${
+                            isBeingDragged
+                              ? "opacity-40 bg-slate-800/30 cursor-grabbing"
+                              : isHoveredTarget
+                              ? "bg-orange-500/20 border-2 border-orange-500 cursor-pointer"
+                              : "hover:bg-slate-800/50 cursor-grab active:cursor-grabbing"
                           }`}
                         >
                           <td className="py-3.5 px-4 flex items-center gap-3">
+                            <Move className="w-3.5 h-3.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                             <Folder className="w-5 h-5 text-amber-400 fill-amber-400/20 group-hover:scale-110 transition-transform" />
                             <span className="font-semibold text-slate-200 group-hover:text-amber-400 transition-colors">
                               {row.name}
@@ -788,14 +809,24 @@ export default function DashboardPage() {
                       );
                     } else {
                       const file = row.item;
+                      const isBeingDragged = !draggedItem?.isFolder && draggedItem?.item.id === file.id;
+
                       return (
                         <tr
                           key={file.id}
                           draggable
-                          onDragStart={() => setDraggedFileItem(file)}
-                          onDragEnd={() => setDraggedFileItem(null)}
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData("text/plain", file.path);
+                            setDraggedItem(row);
+                          }}
+                          onDragEnd={() => setDraggedItem(null)}
                           onContextMenu={(e) => handleContextMenu(e, row)}
-                          className="hover:bg-slate-800/40 transition-colors group cursor-grab active:cursor-grabbing"
+                          className={`transition-colors group ${
+                            isBeingDragged
+                              ? "opacity-40 bg-slate-800/30 cursor-grabbing"
+                              : "hover:bg-slate-800/40 cursor-grab active:cursor-grabbing"
+                          }`}
                         >
                           <td className="py-3.5 px-4 flex items-center gap-3">
                             <Move className="w-3.5 h-3.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
