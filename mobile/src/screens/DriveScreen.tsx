@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   TextInput,
   Dimensions,
+  BackHandler,
 } from "react-native";
 import { Image as ExpoImage } from "expo-image";
 import { WebView } from "react-native-webview";
@@ -163,6 +164,54 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       appStateSub.remove();
     };
   }, []);
+
+  // Handle Android Hardware Back Button
+  useEffect(() => {
+    const onBackPress = () => {
+      // 1. Close full-screen image preview if open
+      if (isImagePreviewVisible) {
+        setIsImagePreviewVisible(false);
+        return true;
+      }
+      // 2. Close full-screen PDF preview if open
+      if (isPdfPreviewVisible) {
+        setIsPdfPreviewVisible(false);
+        return true;
+      }
+      // 3. Close modals if open
+      if (isActionModalVisible) {
+        setIsActionModalVisible(false);
+        return true;
+      }
+      if (isMoveModalVisible) {
+        setIsMoveModalVisible(false);
+        return true;
+      }
+      if (isRenameModalVisible) {
+        setIsRenameModalVisible(false);
+        return true;
+      }
+      // 4. Navigate to parent folder if inside a subfolder
+      if (currentFolder !== "") {
+        const parts = currentFolder.split("/");
+        parts.pop();
+        navigateToFolder(parts.join("/"));
+        return true;
+      }
+      // Default: let system exit app or default action at root
+      return false;
+    };
+
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => backHandler.remove();
+  }, [
+    currentFolder,
+    isImagePreviewVisible,
+    isPdfPreviewVisible,
+    isActionModalVisible,
+    isMoveModalVisible,
+    isRenameModalVisible,
+  ]);
 
   // Extract all available folder paths in the bucket
   const getAllAvailableFolders = () => {
