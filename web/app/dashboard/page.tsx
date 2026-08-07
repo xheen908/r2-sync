@@ -31,6 +31,9 @@ import {
   Download,
   Upload,
   Move,
+  Edit3,
+  Info as InfoIcon,
+  MoreVertical,
 } from "lucide-react";
 
 interface FileItem {
@@ -70,12 +73,27 @@ interface FileRow {
 
 type ExplorerRow = DirectoryRow | FileRow;
 
+interface ContextMenuState {
+  x: number;
+  y: number;
+  row: ExplorerRow;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentPath, setCurrentPath] = useState<string>(""); // "" = Root directory
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Context Menu state
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  // Modals state
+  const [infoModal, setInfoModal] = useState<FileItem | null>(null);
+  const [renameModal, setRenameModal] = useState<FileItem | null>(null);
+  const [newFilenameInput, setNewFilenameInput] = useState("");
+  const [renaming, setRenaming] = useState(false);
 
   // Drag & Drop Upload states
   const [isDraggingExternal, setIsDraggingExternal] = useState(false);
@@ -119,6 +137,32 @@ export default function DashboardPage() {
     fetchFiles();
   }, []);
 
+  // Close context menu on global click or Escape
+  useEffect(() => {
+    const handleGlobalClick = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("click", handleGlobalClick);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("click", handleGlobalClick);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  // Right-click context menu handler
+  const handleContextMenu = (e: React.MouseEvent, row: ExplorerRow) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Bound x and y inside viewport
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 250);
+
+    setContextMenu({ x, y, row });
+  };
+
   // Upload dropped files to current path
   const uploadFiles = async (fileList: FileList | File[], targetFolder = currentPath) => {
     if (!fileList || fileList.length === 0) return;
@@ -160,6 +204,33 @@ export default function DashboardPage() {
       }
     } catch (err) {
       console.error("Error moving file:", err);
+    }
+  };
+
+  // Handle Rename submit
+  const handleRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameModal || !newFilenameInput.trim()) return;
+
+    setRenaming(true);
+    try {
+      const res = await fetch("/api/files/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          oldPath: renameModal.path,
+          newFilename: newFilenameInput.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        setRenameModal(null);
+        fetchFiles();
+      }
+    } catch (err) {
+      console.error("Error renaming file:", err);
+    } finally {
+      setRenaming(false);
     }
   };
 
@@ -386,7 +457,7 @@ export default function DashboardPage() {
       onDragOver={handleWindowDragOver}
       onDragLeave={handleWindowDragLeave}
       onDrop={handleWindowDrop}
-      className="min-h-screen flex flex-col bg-slate-950 text-slate-100 relative"
+      className="min-h-screen flex flex-col bg-slate-950 text-slate-100 relative selection:bg-orange-500 selection:text-white"
     >
       {/* External Dropzone Overlay */}
       {isDraggingExternal && (
@@ -550,12 +621,12 @@ export default function DashboardPage() {
               <Folder className="w-12 h-12 text-slate-700" />
               <p className="text-base font-medium">Dieser Ordner ist leer</p>
               <p className="text-xs text-slate-600">
-                Ziehe Dateien von deinem PC hierher zum Hochladen oder Verschieben.
+                Ziehe Dateien von deinem PC hierher zum Hochladen oder per Rechtsklick Aktionen ausführen.
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-300">
+              <table className="w-full text-left text-sm text-slate-300 select-none">
                 <thead className="bg-slate-900/90 text-xs uppercase font-semibold text-slate-400 border-b border-slate-800">
                   <tr>
                     <th className="py-3.5 px-4">Name</th>
@@ -572,6 +643,7 @@ export default function DashboardPage() {
                         <tr
                           key={`folder_${row.fullPath}_${idx}`}
                           onClick={() => setCurrentPath(row.fullPath)}
+                          onContextMenu={(e) => handleContextMenu(e, row)}
                           onDragOver={(e) => {
                             e.preventDefault();
                             setDragOverFolder(row.fullPath);
@@ -581,12 +653,9 @@ export default function DashboardPage() {
                             e.preventDefault();
                             setDragOverFolder(null);
 
-                            // External files dropped directly onto folder
                             if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                               uploadFiles(e.dataTransfer.files, row.fullPath);
-                            }
-                            // Internal file dragged onto folder
-                            else if (draggedFileItem) {
+                            } else if (draggedFileItem) {
                               moveFileToFolder(draggedFileItem, row.fullPath);
                               setDraggedFileItem(null);
                             }
@@ -613,7 +682,12 @@ export default function DashboardPage() {
                           </td>
                           <td className="py-3.5 px-4 text-slate-500 text-xs">—</td>
                           <td className="py-3.5 px-4 text-right">
-                            <ChevronRight className="w-4 h-4 text-slate-500 inline-block group-hover:text-slate-300 group-hover:translate-x-1 transition-all" />
+                            <button
+                              onClick={(e) => handleContextMenu(e, row)}
+                              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
                           </td>
                         </tr>
                       );
@@ -625,6 +699,7 @@ export default function DashboardPage() {
                           draggable
                           onDragStart={() => setDraggedFileItem(file)}
                           onDragEnd={() => setDraggedFileItem(null)}
+                          onContextMenu={(e) => handleContextMenu(e, row)}
                           className="hover:bg-slate-800/40 transition-colors group cursor-grab active:cursor-grabbing"
                         >
                           <td className="py-3.5 px-4 flex items-center gap-3">
@@ -665,34 +740,12 @@ export default function DashboardPage() {
                             })}
                           </td>
                           <td className="py-3.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5 ml-auto">
-                              <button
-                                onClick={() => handleDirectDownload(file)}
-                                className="p-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center gap-1 text-xs font-medium transition-all"
-                                title="Datei direkt herunterladen"
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Download</span>
-                              </button>
-
-                              <button
-                                onClick={() => openShareModal(file)}
-                                className="p-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center gap-1 text-xs font-medium transition-all"
-                                title="Freigabelinks verwalten & erstellen"
-                              >
-                                <Share2 className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Freigeben</span>
-                              </button>
-
-                              <button
-                                onClick={() => handleDeleteFile(file)}
-                                className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 hover:border-red-500/50 flex items-center gap-1 text-xs font-medium transition-all"
-                                title="Datei aus R2 & DB löschen"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Löschen</span>
-                              </button>
-                            </div>
+                            <button
+                              onClick={(e) => handleContextMenu(e, row)}
+                              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
                           </td>
                         </tr>
                       );
@@ -704,6 +757,212 @@ export default function DashboardPage() {
           )}
         </div>
       </main>
+
+      {/* MACOS FINDER CONTEXT MENU */}
+      {contextMenu && (
+        <div
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed w-52 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-xl shadow-2xl z-50 p-1.5 flex flex-col text-xs text-slate-200 animate-fade-in"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {!contextMenu.row.isFolder ? (
+            <>
+              {/* File Options */}
+              <button
+                onClick={() => {
+                  handleDirectDownload((contextMenu.row as FileRow).item);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors text-left font-medium"
+              >
+                <Download className="w-4 h-4 text-blue-400 group-hover:text-white" />
+                <span>Herunterladen</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  openShareModal((contextMenu.row as FileRow).item);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors text-left font-medium"
+              >
+                <Share2 className="w-4 h-4 text-orange-400 group-hover:text-white" />
+                <span>Freigabelink erstellen...</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const file = (contextMenu.row as FileRow).item;
+                  setRenameModal(file);
+                  setNewFilenameInput(file.filename);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors text-left font-medium"
+              >
+                <Edit3 className="w-4 h-4 text-emerald-400 group-hover:text-white" />
+                <span>Umbenennen...</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setInfoModal((contextMenu.row as FileRow).item);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors text-left font-medium"
+              >
+                <InfoIcon className="w-4 h-4 text-purple-400 group-hover:text-white" />
+                <span>Informationen</span>
+              </button>
+
+              <div className="h-px bg-slate-800 my-1" />
+
+              <button
+                onClick={() => {
+                  handleDeleteFile((contextMenu.row as FileRow).item);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-500 hover:text-white text-red-400 transition-colors text-left font-medium"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Löschen</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Folder Options */}
+              <button
+                onClick={() => {
+                  setCurrentPath((contextMenu.row as DirectoryRow).fullPath);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-500 hover:text-white transition-colors text-left font-medium"
+              >
+                <FolderOpen className="w-4 h-4 text-amber-400 group-hover:text-white" />
+                <span>Ordner öffnen</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* RENAME MODAL */}
+      {renameModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setRenameModal(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                <Edit3 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-lg">Datei umbenennen</h3>
+                <p className="text-xs text-slate-400 truncate max-w-xs">{renameModal.filename}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleRenameSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Neuer Dateiname:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newFilenameInput}
+                  onChange={(e) => setNewFilenameInput(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRenameModal(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors"
+                >
+                  Abbrechen
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={renaming}
+                  className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-all shadow-lg shadow-emerald-500/20"
+                >
+                  {renaming ? "Speichere..." : "Umbenennen"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FILE INFO MODAL */}
+      {infoModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setInfoModal(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 flex items-center justify-center">
+                <InfoIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-lg">Datei-Informationen</h3>
+                <p className="text-xs text-slate-400 truncate max-w-xs">{infoModal.filename}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Vollständiger Pfad:</span>
+                  <span className="font-mono text-orange-400 truncate max-w-[200px]">{infoModal.path}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Dateigröße:</span>
+                  <span className="font-mono text-white">{formatBytes(infoModal.size)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">MIME-Typ:</span>
+                  <span className="font-mono text-white">{infoModal.mimeType || "unbekannt"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Zuletzt geändert:</span>
+                  <span className="text-white">
+                    {new Date(infoModal.updatedAt).toLocaleString("de-DE")}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Aktive Links:</span>
+                  <span className="font-semibold text-emerald-400">
+                    {infoModal.activeSharesCount || 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setInfoModal(null)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium transition-colors"
+              >
+                Schließen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SHARE MODAL WITH REVOKE / DELETE FEATURE */}
       {shareModal && (
