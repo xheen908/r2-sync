@@ -13,7 +13,8 @@
     "lucide-react-native": "^1.30.0",
     "react": "19.2.3",
     "react-native": "0.86.2",
-    "react-native-svg": "^15.15.5"
+    "react-native-svg": "^15.15.5",
+    "react-native-webview": "13.16.1"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

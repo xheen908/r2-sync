@@ -14,8 +14,8 @@ import {
   Modal,
   Image,
   ActivityIndicator,
-  Linking,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import {
   Cloud,
   Folder,
@@ -34,8 +34,6 @@ import {
   Home,
   Eye,
   X,
-  ExternalLink,
-  Download,
 } from "lucide-react-native";
 import {
   fetchFilesList,
@@ -65,9 +63,14 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   const [selectedFile, setSelectedFile] = useState<any | null>(null);
   const [isActionModalVisible, setIsActionModalVisible] = useState(false);
   const [isMoveModalVisible, setIsMoveModalVisible] = useState(false);
+  
+  // Viewer Modals State
   const [isImagePreviewVisible, setIsImagePreviewVisible] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [isImageLoading, setIsImageLoading] = useState(false);
+
+  const [isPdfPreviewVisible, setIsPdfPreviewVisible] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -180,11 +183,14 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       setIsImageLoading(true);
       setIsImagePreviewVisible(true);
     } else if (isPdf) {
+      setSelectedFile(item);
       try {
-        await Linking.openURL(viewUrl);
+        const shareUrl = await generateShareLink(item.path, 1, false);
+        setPreviewPdfUrl(shareUrl);
       } catch (err) {
-        Alert.alert("PDF Öffnen", "PDF konnte nicht im Browser geöffnet werden.");
+        setPreviewPdfUrl(viewUrl);
       }
+      setIsPdfPreviewVisible(true);
     } else {
       setSelectedFile(item);
       setIsActionModalVisible(true);
@@ -236,6 +242,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           onPress: async () => {
             setIsActionModalVisible(false);
             setIsImagePreviewVisible(false);
+            setIsPdfPreviewVisible(false);
             await deleteFileFromVPS(filePath);
             loadData();
           },
@@ -296,7 +303,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         }}
         activeOpacity={0.7}
       >
-        <View style={isImage ? styles.iconContainerImage : styles.iconContainerFile}>
+        <View style={isImage ? styles.iconContainerImage : isPdf ? styles.iconContainerPdf : styles.iconContainerFile}>
           {isImage ? (
             <Eye size={22} color="#A855F7" strokeWidth={2} />
           ) : isPdf ? (
@@ -426,10 +433,10 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           animationType="fade"
           onRequestClose={() => setIsImagePreviewVisible(false)}
         >
-          <View style={styles.imagePreviewContainer}>
+          <View style={styles.viewerContainer}>
             {/* Header */}
-            <View style={[styles.imagePreviewHeader, { paddingTop: statusBarHeight + 12 }]}>
-              <Text style={styles.imagePreviewTitle} numberOfLines={1}>
+            <View style={[styles.viewerHeader, { paddingTop: statusBarHeight + 12 }]}>
+              <Text style={styles.viewerTitle} numberOfLines={1}>
                 {selectedFile.filename}
               </Text>
               <TouchableOpacity
@@ -440,8 +447,8 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
               </TouchableOpacity>
             </View>
 
-            {/* Image Container */}
-            <View style={styles.imageBody}>
+            {/* Image Body */}
+            <View style={styles.viewerBody}>
               {isImageLoading && (
                 <ActivityIndicator size="large" color="#F38020" style={StyleSheet.absoluteFill} />
               )}
@@ -457,22 +464,80 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
               />
             </View>
 
-            {/* Action Bar */}
-            <View style={styles.imagePreviewFooter}>
+            {/* Action Footer */}
+            <View style={styles.viewerFooter}>
               <TouchableOpacity
-                style={styles.imagePreviewActionBtn}
+                style={styles.viewerActionBtn}
                 onPress={() => handleShareLink(selectedFile.path, 24)}
               >
                 <Share2 size={18} color="#38BDF8" style={{ marginRight: 8 }} />
-                <Text style={styles.imagePreviewActionText}>Teilen</Text>
+                <Text style={styles.viewerActionText}>Teilen</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.imagePreviewActionBtn, styles.deleteBtn]}
+                style={[styles.viewerActionBtn, styles.deleteBtn]}
                 onPress={() => handleDelete(selectedFile.path)}
               >
                 <Trash2 size={18} color="#FCA5A5" style={{ marginRight: 8 }} />
-                <Text style={[styles.imagePreviewActionText, styles.deleteBtnText]}>Löschen</Text>
+                <Text style={[styles.viewerActionText, styles.deleteBtnText]}>Löschen</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Fullscreen In-App PDF Viewer Modal */}
+      {selectedFile && previewPdfUrl && (
+        <Modal
+          visible={isPdfPreviewVisible}
+          transparent
+          statusBarTranslucent
+          animationType="fade"
+          onRequestClose={() => setIsPdfPreviewVisible(false)}
+        >
+          <View style={styles.viewerContainer}>
+            {/* Header */}
+            <View style={[styles.viewerHeader, { paddingTop: statusBarHeight + 12 }]}>
+              <Text style={styles.viewerTitle} numberOfLines={1}>
+                📄 {selectedFile.filename}
+              </Text>
+              <TouchableOpacity
+                style={styles.closeBtn}
+                onPress={() => setIsPdfPreviewVisible(false)}
+              >
+                <X size={24} color="#F8FAFC" />
+              </TouchableOpacity>
+            </View>
+
+            {/* In-App PDF WebView */}
+            <View style={styles.viewerBody}>
+              <WebView
+                source={{ uri: previewPdfUrl }}
+                style={styles.fullPdf}
+                startInLoadingState
+                renderLoading={() => (
+                  <ActivityIndicator size="large" color="#F38020" style={StyleSheet.absoluteFill} />
+                )}
+                onError={() => Alert.alert("PDF Laden", "PDF konnte nicht im Viewer geladen werden.")}
+              />
+            </View>
+
+            {/* Action Footer */}
+            <View style={styles.viewerFooter}>
+              <TouchableOpacity
+                style={styles.viewerActionBtn}
+                onPress={() => handleShareLink(selectedFile.path, 24)}
+              >
+                <Share2 size={18} color="#38BDF8" style={{ marginRight: 8 }} />
+                <Text style={styles.viewerActionText}>Teilen</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.viewerActionBtn, styles.deleteBtn]}
+                onPress={() => handleDelete(selectedFile.path)}
+              >
+                <Trash2 size={18} color="#FCA5A5" style={{ marginRight: 8 }} />
+                <Text style={[styles.viewerActionText, styles.deleteBtnText]}>Löschen</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -774,6 +839,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
+  iconContainerPdf: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#EF444415",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
   itemInfo: {
     flex: 1,
   },
@@ -882,19 +956,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
-  imagePreviewContainer: {
+  viewerContainer: {
     flex: 1,
     backgroundColor: "#000000",
   },
-  imagePreviewHeader: {
+  viewerHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingBottom: 16,
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderBottomWidth: 1,
+    borderBottomColor: "#1E293B",
   },
-  imagePreviewTitle: {
+  viewerTitle: {
     color: "#F8FAFC",
     fontSize: 16,
     fontWeight: "700",
@@ -904,22 +980,30 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 6,
   },
-  imageBody: {
+  viewerBody: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#0F172A",
   },
   fullImage: {
     width: "100%",
     height: "100%",
   },
-  imagePreviewFooter: {
+  fullPdf: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#0F172A",
+  },
+  viewerFooter: {
     flexDirection: "row",
     justifyContent: "space-around",
-    padding: 20,
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    padding: 16,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderTopWidth: 1,
+    borderTopColor: "#1E293B",
   },
-  imagePreviewActionBtn: {
+  viewerActionBtn: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#1E293B",
@@ -929,7 +1013,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#334155",
   },
-  imagePreviewActionText: {
+  viewerActionText: {
     color: "#F8FAFC",
     fontWeight: "600",
     fontSize: 14,
