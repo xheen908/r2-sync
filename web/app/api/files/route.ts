@@ -68,6 +68,35 @@ export async function GET(request: Request) {
 
     files = await db.all("SELECT * FROM files ORDER BY updated_at DESC");
 
+    // Auto-populate DB from R2 on initial load if SQLite DB is empty
+    if (files.length === 0 && !forceSync) {
+      try {
+        const { s3Client, bucketName } = await getS3Client();
+        const command = new ListObjectsV2Command({ Bucket: bucketName });
+        const res = await s3Client.send(command);
+
+        if (res.Contents) {
+          for (const item of res.Contents) {
+            if (item.Key && !item.Key.startsWith(".shares/")) {
+              const fileId = `f_${Math.random().toString(36).substring(2)}`;
+              const filename = item.Key.split("/").pop() || item.Key;
+              const etag = item.ETag ? item.ETag.replace(/"/g, "") : "";
+              const size = item.Size || 0;
+              const updatedAt = item.LastModified ? new Date(item.LastModified).getTime() : Date.now();
+
+              await db.run(
+                "INSERT OR REPLACE INTO files (id, path, filename, size, etag, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                [fileId, item.Key, filename, size, etag, updatedAt]
+              );
+            }
+          }
+          files = await db.all("SELECT * FROM files ORDER BY updated_at DESC");
+        }
+      } catch (autoSyncErr) {
+        console.warn("Files API: Initial auto-sync from R2 failed:", autoSyncErr);
+      }
+    }
+
     const deletedRows = await db.all("SELECT path FROM deleted_files");
     deletedFiles = deletedRows.map((r: any) => r.path);
 
