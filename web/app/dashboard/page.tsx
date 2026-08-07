@@ -33,6 +33,7 @@ interface FileItem {
   size: number;
   mimeType?: string;
   updatedAt: number;
+  activeSharesCount?: number;
 }
 
 interface ShareModalData {
@@ -377,10 +378,21 @@ export default function DashboardPage() {
                         >
                           <td className="py-3.5 px-4 flex items-center gap-3">
                             {getFileIcon(file.filename)}
-                            <div className="flex flex-col">
-                              <span className="font-medium text-slate-200 group-hover:text-white transition-colors">
-                                {file.filename}
-                              </span>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-slate-200 group-hover:text-white transition-colors">
+                                  {file.filename}
+                                </span>
+                                {file.activeSharesCount && file.activeSharesCount > 0 ? (
+                                  <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                    <Share2 className="w-2.5 h-2.5" />
+                                    <span>
+                                      {file.activeSharesCount}{" "}
+                                      {file.activeSharesCount === 1 ? "aktiver Link" : "aktive Links"}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
                               {searchQuery && (
                                 <span className="text-[11px] text-slate-500 truncate max-w-xs">
                                   {file.path}

@@ -6,12 +6,23 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   let files: any[] = [];
+  let activeCounts: Record<string, number> = {};
 
   // 1. Try reading from local SQLite database
   try {
     const { getDb } = await import("@/lib/db");
     const db = await getDb();
     files = await db.all("SELECT * FROM files ORDER BY updated_at DESC");
+
+    // Calculate active share link counts per file
+    const now = Date.now();
+    const counts = await db.all(
+      "SELECT file_path, COUNT(*) as count FROM share_links WHERE expires_at IS NULL OR expires_at > ? GROUP BY file_path",
+      [now]
+    );
+    for (const row of counts) {
+      activeCounts[row.file_path] = row.count;
+    }
   } catch (dbErr) {
     console.warn("Files API: SQLite lookup failed, falling back to R2 directly:", dbErr);
   }
@@ -40,14 +51,18 @@ export async function GET() {
     }
   }
 
-  const formattedFiles = files.map((f: any) => ({
-    id: f.id || `f_${Math.random().toString(36).substring(2)}`,
-    path: f.path || f.Key || "",
-    filename: f.filename || (f.path ? f.path.split("/").pop() : "file"),
-    size: f.size || f.Size || 0,
-    mimeType: f.mime_type || "application/octet-stream",
-    updatedAt: f.updated_at || Date.now(),
-  }));
+  const formattedFiles = files.map((f: any) => {
+    const path = f.path || f.Key || "";
+    return {
+      id: f.id || `f_${Math.random().toString(36).substring(2)}`,
+      path,
+      filename: f.filename || (path ? path.split("/").pop() : "file"),
+      size: f.size || f.Size || 0,
+      mimeType: f.mime_type || "application/octet-stream",
+      updatedAt: f.updated_at || Date.now(),
+      activeSharesCount: activeCounts[path] || 0,
+    };
+  });
 
   return NextResponse.json({ files: formattedFiles });
 }
