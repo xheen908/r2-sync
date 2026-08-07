@@ -18,25 +18,26 @@ export async function POST(request: Request) {
     const inputHash = crypto.createHash("sha256").update(password).digest("hex");
     let isMatch = false;
 
-    // Check admin default or SQLite users table
-    if (username === "admin" && password === "adminpassword") {
-      isMatch = true;
-    } else {
-      try {
-        const { getDb } = await import("@/lib/db");
-        const db = await getDb();
-        const user = await db.get("SELECT * FROM users WHERE username = ?", [username]);
-        if (user && user.password_hash === inputHash) {
-          isMatch = true;
-        }
-      } catch (dbErr) {
-        console.error("DB auth lookup error:", dbErr);
+    // 1. Check SQLite database first
+    try {
+      const { getDb } = await import("@/lib/db");
+      const db = await getDb();
+      const user = await db.get("SELECT * FROM users WHERE username = ?", [username]);
+      if (user && user.password_hash === inputHash) {
+        isMatch = true;
       }
+    } catch (dbErr) {
+      console.error("DB auth lookup error:", dbErr);
+    }
+
+    // 2. Fallback default admin credentials
+    if (!isMatch && username === "admin" && password === "adminpassword") {
+      isMatch = true;
     }
 
     if (!isMatch) {
       return NextResponse.json(
-        { error: "Ungültige Anmeldedaten" },
+        { error: "Ungültige Anmeldedaten (Benutzername oder Passwort falsch)" },
         { status: 401 }
       );
     }

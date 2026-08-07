@@ -84,6 +84,9 @@ final class ConfigManager: ObservableObject {
         if !cleanUrl.hasPrefix("http://") && !cleanUrl.hasPrefix("https://") {
             cleanUrl = "https://" + cleanUrl
         }
+        if cleanUrl.contains("ocpp-labs.com") && !cleanUrl.contains("drive.ocpp-labs.com") {
+            cleanUrl = "https://drive.ocpp-labs.com"
+        }
         if cleanUrl.hasSuffix("/") {
             cleanUrl = String(cleanUrl.dropLast())
         }
