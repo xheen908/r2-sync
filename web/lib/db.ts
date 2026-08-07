@@ -8,20 +8,42 @@ let dbInstance: Database | null = null;
 export async function getDb(): Promise<Database> {
   if (dbInstance) return dbInstance;
 
-  const dataDir = path.join(process.cwd(), "data");
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
+  let dbPath = path.join(process.cwd(), "data", "r2sync.db");
+  const dataDir = path.dirname(dbPath);
+
+  try {
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+  } catch (err) {
+    console.warn("data directory creation failed, falling back to /tmp:", err);
+    dbPath = path.join("/tmp", "r2sync.db");
   }
 
-  const dbPath = path.join(dataDir, "r2sync.db");
-  dbInstance = await open({
-    filename: dbPath,
-    driver: sqlite3.Database,
-  });
+  try {
+    dbInstance = await open({
+      filename: dbPath,
+      driver: sqlite3.Database,
+    });
+  } catch (openErr) {
+    console.warn(`Failed to open ${dbPath}, falling back to /tmp/r2sync.db:`, openErr);
+    dbPath = path.join("/tmp", "r2sync.db");
+    dbInstance = await open({
+      filename: dbPath,
+      driver: sqlite3.Database,
+    });
+  }
 
-  // Enable WAL mode & create tables
-  await dbInstance.exec("PRAGMA journal_mode = WAL;");
+  // Set journal mode safely
+  try {
+    await dbInstance.exec("PRAGMA journal_mode = WAL;");
+  } catch (walErr) {
+    try {
+      await dbInstance.exec("PRAGMA journal_mode = DELETE;");
+    } catch (e) {}
+  }
 
+  // Create tables
   await dbInstance.exec(`
     CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -58,14 +80,16 @@ export async function getDb(): Promise<Database> {
   `);
 
   // Default admin user check
-  const adminCheck = await dbInstance.get("SELECT * FROM users WHERE username = ?", ["admin"]);
-  if (!adminCheck) {
-    const defaultHash = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918";
-    await dbInstance.run(
-      `INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)`,
-      ["usr_admin_default", "admin", defaultHash, Date.now()]
-    );
-  }
+  try {
+    const adminCheck = await dbInstance.get("SELECT * FROM users WHERE username = ?", ["admin"]);
+    if (!adminCheck) {
+      const defaultHash = "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918";
+      await dbInstance.run(
+        `INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)`,
+        ["usr_admin_default", "admin", defaultHash, Date.now()]
+      );
+    }
+  } catch (adminErr) {}
 
   return dbInstance;
 }

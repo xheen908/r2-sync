@@ -12,9 +12,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "oldPath and newFilename parameters are required" }, { status: 400 });
     }
 
-    const { getDb } = await import("@/lib/db");
-    const db = await getDb();
-
     // ----------------------------------------------------
     // CASE A: Rename Folder
     // ----------------------------------------------------
@@ -52,18 +49,26 @@ export async function POST(request: Request) {
         }));
 
         try {
-          await db.run("UPDATE files SET path = ? WHERE path = ?", [newKey, oldKey]);
-          await db.run("UPDATE share_links SET file_path = ? WHERE file_path = ?", [newKey, oldKey]);
+          const { getDb } = await import("@/lib/db");
+          const db = await getDb();
+          if (db) {
+            await db.run("UPDATE files SET path = ? WHERE path = ?", [newKey, oldKey]);
+            await db.run("UPDATE share_links SET file_path = ? WHERE file_path = ?", [newKey, oldKey]);
+          }
         } catch (dbErr) {}
       }
 
       try {
-        const rows = await db.all("SELECT id, path FROM files WHERE path LIKE ?", [`${sourcePrefix}%`]);
-        for (const row of rows) {
-          const sub = row.path.slice(sourcePrefix.length);
-          const updatedPath = `${newFolderPath}/${sub}`;
-          await db.run("UPDATE files SET path = ? WHERE id = ?", [updatedPath, row.id]);
-          await db.run("UPDATE share_links SET file_path = ? WHERE file_path = ?", [updatedPath, row.path]);
+        const { getDb } = await import("@/lib/db");
+        const db = await getDb();
+        if (db) {
+          const rows = await db.all("SELECT id, path FROM files WHERE path LIKE ?", [`${sourcePrefix}%`]);
+          for (const row of rows) {
+            const sub = row.path.slice(sourcePrefix.length);
+            const updatedPath = `${newFolderPath}/${sub}`;
+            await db.run("UPDATE files SET path = ? WHERE id = ?", [updatedPath, row.id]);
+            await db.run("UPDATE share_links SET file_path = ? WHERE file_path = ?", [updatedPath, row.path]);
+          }
         }
       } catch (err) {}
 
@@ -93,8 +98,12 @@ export async function POST(request: Request) {
     }));
 
     try {
-      await db.run("UPDATE files SET path = ?, filename = ? WHERE path = ?", [newPath, newFilename.trim(), oldPath]);
-      await db.run("UPDATE share_links SET file_path = ?, filename = ? WHERE file_path = ?", [newPath, newFilename.trim(), oldPath]);
+      const { getDb } = await import("@/lib/db");
+      const db = await getDb();
+      if (db) {
+        await db.run("UPDATE files SET path = ?, filename = ? WHERE path = ?", [newPath, newFilename.trim(), oldPath]);
+        await db.run("UPDATE share_links SET file_path = ?, filename = ? WHERE file_path = ?", [newPath, newFilename.trim(), oldPath]);
+      }
     } catch (dbErr) {
       console.warn("Rename API: SQLite update failed:", dbErr);
     }
