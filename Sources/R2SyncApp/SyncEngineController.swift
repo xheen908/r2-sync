@@ -203,6 +203,7 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
                 let localURL = rootURL.appendingPathComponent(deletedKey)
                 if fileManager.fileExists(atPath: localURL.path) {
                     print("[SyncEngineController] File marked as deleted in Web UI: \(deletedKey). Deleting locally on Mac...")
+                    isPerformingFullSync = true
                     try? fileManager.removeItem(at: localURL)
                 }
             }
