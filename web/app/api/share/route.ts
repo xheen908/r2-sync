@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { s3Client, r2BucketName } from "@/lib/r2";
-import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 export const dynamic = "force-dynamic";
 
@@ -18,29 +18,91 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "filePath parameter is required" }, { status: 400 });
   }
 
-  let shares: any[] = [];
+  const sharesMap = new Map<string, any>();
   const now = Date.now();
+  const cleanPath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
+  const slashedPath = `/${cleanPath}`;
 
+  // A. Fetch from SQLite DB
   try {
     const { getDb } = await import("@/lib/db");
     const db = await getDb();
-    shares = await db.all(
-      `SELECT * FROM share_links WHERE file_path = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC`,
-      [filePath, now]
+    const rows = await db.all(
+      `SELECT * FROM share_links WHERE (file_path = ? OR file_path = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC`,
+      [cleanPath, slashedPath, now]
     );
+    for (const s of rows) {
+      sharesMap.set(s.id, {
+        id: s.id,
+        filePath: s.file_path,
+        filename: s.filename,
+        expiresAt: s.expires_at,
+        requiresPassword: !!s.password_hash,
+        createdAt: s.created_at,
+      });
+    }
   } catch (dbErr) {
     console.warn("Share list API: SQLite lookup failed", dbErr);
   }
 
-  const baseUrl = process.env.R2_PUBLIC_DOMAIN_URL || "https://drive.ocpp-labs.com";
+  // B. Also scan R2 backup `.shares/` objects to ensure 100% complete link discovery
+  try {
+    const listCmd = new ListObjectsV2Command({
+      Bucket: r2BucketName,
+      Prefix: ".shares/",
+    });
+    const res = await s3Client.send(listCmd);
+    if (res.Contents) {
+      for (const item of res.Contents) {
+        if (item.Key && item.Key.endsWith(".json")) {
+          try {
+            const getCmd = new GetObjectCommand({
+              Bucket: r2BucketName,
+              Key: item.Key,
+            });
+            const objRes = await s3Client.send(getCmd);
+            if (objRes.Body) {
+              const bodyStr = await objRes.Body.transformToString();
+              const data = JSON.parse(bodyStr);
+              if (
+                data &&
+                data.shareId &&
+                (!data.expiresAt || data.expiresAt > now) &&
+                (data.filePath === cleanPath || data.filePath === slashedPath || (data.filePath && data.filePath.endsWith(cleanPath)))
+              ) {
+                if (!sharesMap.has(data.shareId)) {
+                  sharesMap.set(data.shareId, {
+                    id: data.shareId,
+                    filePath: data.filePath,
+                    filename: data.filename,
+                    expiresAt: data.expiresAt,
+                    requiresPassword: !!data.passwordHash,
+                    createdAt: data.createdAt || now,
+                  });
+                }
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (r2Err) {
+    console.warn("Share list API: R2 shares scan failed", r2Err);
+  }
+
+  const baseUrl = process.env.R2_PUBLIC_DOMAIN_URL ||
+                  (request.headers.get("x-forwarded-host") ? `https://${request.headers.get("x-forwarded-host")}` : null) ||
+                  (request.headers.get("host") && !request.headers.get("host")?.includes("0.0.0.0") ? `https://${request.headers.get("host")}` : null) ||
+                  "https://drive.ocpp-labs.com";
+
   const cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 
-  const formattedShares = shares.map((s) => ({
+  const formattedShares = Array.from(sharesMap.values()).map((s) => ({
     id: s.id,
     shareUrl: `${cleanBaseUrl}/s/${s.id}`,
-    expiresAt: s.expires_at,
-    requiresPassword: !!s.password_hash,
-    createdAt: s.created_at,
+    expiresAt: s.expiresAt,
+    requiresPassword: s.requiresPassword,
+    createdAt: s.createdAt,
   }));
 
   return NextResponse.json({ shares: formattedShares });
