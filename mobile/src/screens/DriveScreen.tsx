@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -15,6 +15,7 @@ import {
   Image,
   ActivityIndicator,
   TextInput,
+  Dimensions,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import * as FileSystem from "expo-file-system/legacy";
@@ -24,7 +25,6 @@ import {
   FileText,
   Camera,
   LogOut,
-  ChevronRight,
   MoreVertical,
   ArrowLeft,
   Share2,
@@ -33,11 +33,17 @@ import {
   Infinity as InfinityIcon,
   RefreshCw,
   FolderInput,
-  Home,
   Eye,
   X,
   Edit2,
+  LayoutGrid,
+  List,
 } from "lucide-react-native";
+
+const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp"];
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const GALLERY_COLS = 3;
+const GALLERY_TILE = (SCREEN_WIDTH - 4) / GALLERY_COLS;
 import {
   fetchFilesList,
   deleteFileFromVPS,
@@ -71,11 +77,16 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
   const [renameInputValue, setRenameInputValue] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
-  
+  // Gallery / List toggle: 'auto' respects auto-detection, 'list' forces list, 'gallery' forces gallery
+  const [viewMode, setViewMode] = useState<'auto' | 'list' | 'gallery'>('auto');
+  const [serverUrl, setServerUrl] = useState<string>("");
+
   // Viewer Modals State
   const [isImagePreviewVisible, setIsImagePreviewVisible] = useState(false);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [previewImages, setPreviewImages] = useState<any[]>([]); // all images in folder
+  const [previewIndex, setPreviewIndex] = useState(0);           // current swipe index
   const [isImageLoading, setIsImageLoading] = useState(false);
+  const previewListRef = React.useRef<FlatList>(null);
 
   const [isPdfPreviewVisible, setIsPdfPreviewVisible] = useState(false);
   const [previewPdfHtml, setPreviewPdfHtml] = useState<string | null>(null);
@@ -83,11 +94,37 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
 
   const loadData = async () => {
     try {
+      const cfg = await getSavedConfig();
+      if (cfg) setServerUrl(cfg.serverUrl);
       const items = await fetchFilesList();
       setFiles(items);
     } catch (err: any) {
       console.warn("Failed to load files", err);
     }
+  };
+
+  // Returns true if the current folder is predominantly images (>50%)
+  const isImageFolder = useCallback(() => {
+    const displayItems = getDisplayItemsForCheck();
+    const fileItems = displayItems.filter((i: any) => !i.isFolder);
+    if (fileItems.length === 0) return false;
+    const imageCount = fileItems.filter((i: any) => {
+      const ext = (i.filename || "").split(".").pop()?.toLowerCase() || "";
+      return IMAGE_EXTENSIONS.includes(ext);
+    }).length;
+    return imageCount / fileItems.length > 0.5;
+  }, [files, currentFolder]);
+
+  const shouldShowGallery = useCallback(() => {
+    if (viewMode === 'gallery') return true;
+    if (viewMode === 'list') return false;
+    return isImageFolder(); // 'auto'
+  }, [viewMode, isImageFolder]);
+
+  // Reset to auto-detect when navigating folders
+  const navigateToFolder = (path: string) => {
+    setViewMode('auto');
+    setCurrentFolder(path);
   };
 
   const handleRefresh = async () => {
@@ -145,33 +182,31 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     return Array.from(foldersSet);
   };
 
-  // Compute current folder contents & subfolders
-  const getDisplayItems = () => {
+  // Shared logic for computing display items (used both for rendering and detection)
+  const getDisplayItemsForCheck = () => {
     const foldersSet = new Set<string>();
     const fileItems: FileItem[] = [];
-
     const prefix = currentFolder ? currentFolder + "/" : "";
-
     files.forEach((file) => {
       if (file.path.startsWith(prefix)) {
         const subPath = file.path.slice(prefix.length);
         if (subPath.includes("/")) {
-          const folderName = subPath.split("/")[0];
-          foldersSet.add(folderName);
+          foldersSet.add(subPath.split("/")[0]);
         } else if (subPath.length > 0) {
           fileItems.push(file);
         }
       }
     });
-
     const folderItems = Array.from(foldersSet).map((name) => ({
       isFolder: true,
       name,
       path: prefix + name,
     }));
-
     return [...folderItems, ...fileItems.map((f) => ({ isFolder: false, ...f }))];
   };
+
+  // Compute current folder contents & subfolders
+  const getDisplayItems = () => getDisplayItemsForCheck();
 
   const handleOpenFile = async (item: FileItem) => {
     console.log("[DriveScreen] handleOpenFile triggered for:", item.filename);
@@ -185,10 +220,23 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     const downloadUrl = `${cfg.serverUrl}/api/files/download?filePath=${encodeURIComponent(item.path)}`;
 
     if (isImage) {
-      setSelectedFile(item);
-      setPreviewImageUrl(`${downloadUrl}&inline=1`);
+      // Build the list of all images in the current folder for swipe navigation
+      const allItems = getDisplayItemsForCheck();
+      const folderImages = allItems.filter((i: any) => {
+        if (i.isFolder) return false;
+        const ext = (i.filename || "").split(".").pop()?.toLowerCase() || "";
+        return IMAGE_EXTENSIONS.includes(ext);
+      });
+      const idx = folderImages.findIndex((i: any) => i.path === item.path);
+      setPreviewImages(folderImages);
+      setPreviewIndex(idx >= 0 ? idx : 0);
+      setSelectedFile(folderImages[idx >= 0 ? idx : 0]);
       setIsImageLoading(true);
       setIsImagePreviewVisible(true);
+      // Scroll to the correct index after the modal renders
+      setTimeout(() => {
+        previewListRef.current?.scrollToIndex({ index: idx >= 0 ? idx : 0, animated: false });
+      }, 50);
     } else if (isPdf) {
       setSelectedFile(item);
       setIsPdfLoading(true);
@@ -388,12 +436,66 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     );
   };
 
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Gallery tile renderer (3-column grid)
+  const renderGalleryItem = ({ item }: { item: any }) => {
+    if (item.isFolder) {
+      return (
+        <TouchableOpacity
+          style={styles.galleryFolderTile}
+          onPress={() => navigateToFolder(item.path)}
+          activeOpacity={0.7}
+        >
+          <Folder size={32} color="#F38020" strokeWidth={2} />
+          <Text style={styles.galleryFolderName} numberOfLines={2}>{item.name}</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    const fileExt = (item.filename || "").split(".").pop()?.toLowerCase() || "";
+    const isImage = IMAGE_EXTENSIONS.includes(fileExt);
+    const thumbUrl = serverUrl
+      ? `${serverUrl}/api/files/download?filePath=${encodeURIComponent(item.path)}&inline=1`
+      : null;
+
+    return (
+      <TouchableOpacity
+        style={styles.galleryTile}
+        onPress={() => handleOpenFile(item)}
+        onLongPress={() => { setSelectedFile(item); setIsActionModalVisible(true); }}
+        activeOpacity={0.85}
+      >
+        {isImage && thumbUrl ? (
+          <Image
+            source={{ uri: thumbUrl }}
+            style={styles.galleryThumb}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.galleryThumbPlaceholder}>
+            <FileText size={28} color="#38BDF8" strokeWidth={1.5} />
+            <Text style={styles.galleryThumbExt}>.{fileExt}</Text>
+          </View>
+        )}
+        <View style={styles.galleryTileOverlay}>
+          <Text style={styles.galleryTileName} numberOfLines={1}>{item.filename}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // List row renderer
   const renderItem = ({ item }: { item: any }) => {
     if (item.isFolder) {
       return (
         <TouchableOpacity
           style={styles.itemCard}
-          onPress={() => setCurrentFolder(item.path)}
+          onPress={() => navigateToFolder(item.path)}
           onLongPress={() => {
             setSelectedFile(item);
             setIsMoveModalVisible(true);
@@ -420,14 +522,8 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       );
     }
 
-    const formatSize = (bytes: number) => {
-      if (bytes < 1024) return `${bytes} B`;
-      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    };
-
     const fileExt = item.filename.split(".").pop()?.toLowerCase() || "";
-    const isImage = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp"].includes(fileExt);
+    const isImage = IMAGE_EXTENSIONS.includes(fileExt);
     const isPdf = fileExt === "pdf";
 
     return (
@@ -501,6 +597,25 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
             <Text style={styles.syncBtnText}>Fotos sichern</Text>
           </TouchableOpacity>
 
+          {/* Gallery / List toggle */}
+          <TouchableOpacity
+            style={styles.viewToggleBtn}
+            activeOpacity={0.8}
+            onPress={() => {
+              setViewMode(prev => {
+                if (prev === 'auto') return shouldShowGallery() ? 'list' : 'gallery';
+                if (prev === 'gallery') return 'list';
+                return 'gallery';
+              });
+            }}
+          >
+            {shouldShowGallery() ? (
+              <List size={18} color="#94A3B8" strokeWidth={2} />
+            ) : (
+              <LayoutGrid size={18} color="#94A3B8" strokeWidth={2} />
+            )}
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.logoutBtn}
             activeOpacity={0.8}
@@ -532,7 +647,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           onPress={() => {
             const parts = currentFolder.split("/");
             parts.pop();
-            setCurrentFolder(parts.join("/"));
+            navigateToFolder(parts.join("/"));
           }}
         >
           <ArrowLeft size={16} color="#38BDF8" strokeWidth={2.2} style={{ marginRight: 8 }} />
@@ -540,30 +655,60 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         </TouchableOpacity>
       )}
 
-      {/* File List */}
-      <FlatList
-        style={{ flex: 1 }}
-        data={getDisplayItems()}
-        keyExtractor={(item: any) => item.path || item.name || item.filename}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={handleRefresh}
-            tintColor="#F38020"
-          />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Folder size={48} color="#334155" strokeWidth={1.5} style={{ marginBottom: 12 }} />
-            <Text style={styles.emptyText}>Dieser Ordner ist leer.</Text>
-          </View>
-        }
-      />
+      {/* Auto-detected gallery badge */}
+      {shouldShowGallery() && viewMode === 'auto' && (
+        <View style={styles.galleryBadge}>
+          <LayoutGrid size={12} color="#A855F7" strokeWidth={2} style={{ marginRight: 4 }} />
+          <Text style={styles.galleryBadgeText}>Galerie-Ansicht (automatisch erkannt)</Text>
+        </View>
+      )}
 
-      {/* Fullscreen Image Preview Modal */}
-      {selectedFile && previewImageUrl && (
+      {/* File List or Gallery Grid */}
+      {shouldShowGallery() ? (
+        <FlatList
+          key="gallery"
+          style={{ flex: 1 }}
+          data={getDisplayItems()}
+          keyExtractor={(item: any) => item.path || item.name || item.filename}
+          renderItem={renderGalleryItem}
+          numColumns={GALLERY_COLS}
+          contentContainerStyle={styles.galleryContainer}
+          refreshControl={
+            <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor="#F38020" />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Folder size={48} color="#334155" strokeWidth={1.5} style={{ marginBottom: 12 }} />
+              <Text style={styles.emptyText}>Dieser Ordner ist leer.</Text>
+            </View>
+          }
+        />
+      ) : (
+        <FlatList
+          key="list"
+          style={{ flex: 1 }}
+          data={getDisplayItems()}
+          keyExtractor={(item: any) => item.path || item.name || item.filename}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor="#F38020"
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Folder size={48} color="#334155" strokeWidth={1.5} style={{ marginBottom: 12 }} />
+              <Text style={styles.emptyText}>Dieser Ordner ist leer.</Text>
+            </View>
+          }
+        />
+      )}
+
+      {/* Fullscreen Swipeable Image Preview Modal */}
+      {isImagePreviewVisible && previewImages.length > 0 && (
         <Modal
           visible={isImagePreviewVisible}
           transparent={false}
@@ -573,9 +718,14 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           <SafeAreaView style={styles.viewerContainer}>
             {/* Header */}
             <View style={[styles.viewerHeader, { paddingTop: statusBarHeight + 12 }]}>
-              <Text style={styles.viewerTitle} numberOfLines={1}>
-                {selectedFile.filename}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.viewerTitle} numberOfLines={1}>
+                  {selectedFile?.filename}
+                </Text>
+                <Text style={styles.viewerSubtitle}>
+                  {previewIndex + 1} / {previewImages.length}
+                </Text>
+              </View>
               <TouchableOpacity
                 style={styles.closeBtn}
                 onPress={() => setIsImagePreviewVisible(false)}
@@ -584,28 +734,57 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
               </TouchableOpacity>
             </View>
 
-            {/* Image Body */}
-            <View style={styles.viewerBody}>
-              {isImageLoading && (
-                <ActivityIndicator size="large" color="#F38020" style={StyleSheet.absoluteFill} />
-              )}
-              <Image
-                source={{ uri: previewImageUrl }}
-                style={styles.fullImage}
-                resizeMode="contain"
-                onLoadEnd={() => setIsImageLoading(false)}
-                onError={() => {
-                  setIsImageLoading(false);
-                  Alert.alert("Fehler", "Bild konnte nicht geladen werden.");
-                }}
-              />
-            </View>
+            {/* Swipeable Image Pages */}
+            <FlatList
+              ref={previewListRef}
+              data={previewImages}
+              keyExtractor={(item: any) => item.path}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              initialScrollIndex={previewIndex}
+              getItemLayout={(_, index) => ({
+                length: SCREEN_WIDTH,
+                offset: SCREEN_WIDTH * index,
+                index,
+              })}
+              onMomentumScrollEnd={(e) => {
+                const newIndex = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+                if (newIndex !== previewIndex) {
+                  setPreviewIndex(newIndex);
+                  setSelectedFile(previewImages[newIndex]);
+                  setIsImageLoading(true);
+                }
+              }}
+              renderItem={({ item: imgItem }) => {
+                const imgUrl = serverUrl
+                  ? `${serverUrl}/api/files/download?filePath=${encodeURIComponent(imgItem.path)}&inline=1`
+                  : null;
+                return (
+                  <View style={{ width: SCREEN_WIDTH, flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
+                    {isImageLoading && (
+                      <ActivityIndicator size="large" color="#F38020" style={StyleSheet.absoluteFill} />
+                    )}
+                    {imgUrl ? (
+                      <Image
+                        source={{ uri: imgUrl }}
+                        style={{ width: SCREEN_WIDTH, flex: 1 }}
+                        resizeMode="contain"
+                        onLoadEnd={() => setIsImageLoading(false)}
+                        onError={() => setIsImageLoading(false)}
+                      />
+                    ) : null}
+                  </View>
+                );
+              }}
+              style={{ flex: 1 }}
+            />
 
             {/* Action Footer */}
             <View style={styles.viewerFooter}>
               <TouchableOpacity
                 style={styles.viewerActionBtn}
-                onPress={() => handleShareLink(selectedFile.path, 24)}
+                onPress={() => selectedFile && handleShareLink(selectedFile.path, 24)}
               >
                 <Share2 size={18} color="#38BDF8" style={{ marginRight: 8 }} />
                 <Text style={styles.viewerActionText}>Teilen</Text>
@@ -613,7 +792,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
 
               <TouchableOpacity
                 style={[styles.viewerActionBtn, styles.deleteBtn]}
-                onPress={() => handleDelete(selectedFile.path)}
+                onPress={() => selectedFile && handleDelete(selectedFile.path)}
               >
                 <Trash2 size={18} color="#FCA5A5" style={{ marginRight: 8 }} />
                 <Text style={[styles.viewerActionText, styles.deleteBtnText]}>Löschen</Text>
@@ -1217,8 +1396,12 @@ const styles = StyleSheet.create({
     color: "#F8FAFC",
     fontSize: 16,
     fontWeight: "700",
-    flex: 1,
-    marginRight: 16,
+    marginRight: 8,
+  },
+  viewerSubtitle: {
+    color: "#64748B",
+    fontSize: 12,
+    marginTop: 2,
   },
   closeBtn: {
     padding: 6,
@@ -1262,5 +1445,79 @@ const styles = StyleSheet.create({
     color: "#F8FAFC",
     fontWeight: "600",
     fontSize: 14,
+  },
+  // Gallery grid styles
+  galleryContainer: {
+    padding: 1,
+  },
+  galleryTile: {
+    width: GALLERY_TILE,
+    height: GALLERY_TILE,
+    margin: 1,
+    backgroundColor: "#1E293B",
+    overflow: "hidden",
+  },
+  galleryThumb: {
+    width: "100%",
+    height: "100%",
+  },
+  galleryThumbPlaceholder: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#1E293B",
+  },
+  galleryThumbExt: {
+    color: "#64748B",
+    fontSize: 10,
+    marginTop: 4,
+  },
+  galleryTileOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  galleryTileName: {
+    color: "#F8FAFC",
+    fontSize: 9,
+  },
+  galleryFolderTile: {
+    width: GALLERY_TILE,
+    height: GALLERY_TILE,
+    margin: 1,
+    backgroundColor: "#1E293B",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 8,
+  },
+  galleryFolderName: {
+    color: "#F8FAFC",
+    fontSize: 10,
+    textAlign: "center",
+    marginTop: 6,
+  },
+  galleryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: "#1E1B4B",
+  },
+  galleryBadgeText: {
+    color: "#A855F7",
+    fontSize: 11,
+  },
+  viewToggleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#1E293B",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
   },
 });
