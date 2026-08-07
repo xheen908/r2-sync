@@ -9,6 +9,29 @@ async function hashPassword(password: string): Promise<string> {
   return crypto.createHash("sha256").update(password).digest("hex");
 }
 
+function getMimeType(filename: string, fallbackContentType?: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  const mimeTypes: Record<string, string> = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+    txt: "text/plain",
+    html: "text/html",
+    json: "application/json",
+    mp4: "video/mp4",
+    mp3: "audio/mpeg",
+  };
+  if (mimeTypes[ext]) return mimeTypes[ext];
+  if (fallbackContentType && fallbackContentType !== "application/octet-stream" && fallbackContentType !== "binary/octet-stream") {
+    return fallbackContentType;
+  }
+  return "application/octet-stream";
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { shareId: string } }
@@ -17,6 +40,7 @@ export async function GET(
   const url = new URL(request.url);
   const password = url.searchParams.get("password") || "";
   const requestedFilePath = url.searchParams.get("filePath") || "";
+  const isInline = url.searchParams.get("inline") === "1";
 
   if (!shareId) {
     return NextResponse.json({ error: "Ungültiger Link" }, { status: 400 });
@@ -95,13 +119,17 @@ export async function GET(
       return NextResponse.json({ error: "Originaldatei nicht gefunden" }, { status: 404 });
     }
 
-    const inlineParam = url.searchParams.get("inline");
-    const disposition = inlineParam === "1" ? "inline" : `attachment; filename="${encodeURIComponent(filename)}"`;
-
     const stream = fileRes.Body.transformToWebStream();
     const headers = new Headers();
-    headers.set("Content-Type", fileRes.ContentType || "application/octet-stream");
-    headers.set("Content-Disposition", disposition);
+    
+    const mimeType = getMimeType(filename, fileRes.ContentType);
+    headers.set("Content-Type", mimeType);
+
+    if (isInline) {
+      headers.set("Content-Disposition", "inline");
+    } else {
+      headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+    }
 
     return new Response(stream, { headers });
   } catch (r2StreamErr) {
