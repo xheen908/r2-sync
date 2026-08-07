@@ -3,8 +3,9 @@ FROM node:20-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
+RUN apk add --no-cache python3 make g++ sqlite
 WORKDIR /app
-COPY package.json ./
+COPY package.json package-lock.json* ./
 RUN npm install
 
 # Rebuild the source code only when needed

