@@ -7,10 +7,27 @@ import {
   TouchableOpacity,
   RefreshControl,
   SafeAreaView,
+  StatusBar,
+  Platform,
   Alert,
   Share,
   Modal,
 } from "react-native";
+import {
+  Cloud,
+  Folder,
+  FileText,
+  Camera,
+  LogOut,
+  ChevronRight,
+  MoreVertical,
+  ArrowLeft,
+  Share2,
+  Trash2,
+  Clock,
+  Infinity as InfinityIcon,
+  RefreshCw,
+} from "lucide-react-native";
 import {
   fetchFilesList,
   deleteFileFromVPS,
@@ -151,13 +168,16 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         <TouchableOpacity
           style={styles.itemCard}
           onPress={() => setCurrentFolder(item.path)}
+          activeOpacity={0.7}
         >
-          <Text style={styles.itemIcon}>📁</Text>
+          <View style={styles.iconContainerFolder}>
+            <Folder size={22} color="#F38020" strokeWidth={2.2} />
+          </View>
           <View style={styles.itemInfo}>
             <Text style={styles.itemName}>{item.name}</Text>
             <Text style={styles.itemMeta}>Ordner</Text>
           </View>
-          <Text style={styles.chevron}>›</Text>
+          <ChevronRight size={20} color="#64748B" />
         </TouchableOpacity>
       );
     }
@@ -175,47 +195,64 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           setSelectedFile(item);
           setIsActionModalVisible(true);
         }}
+        activeOpacity={0.7}
       >
-        <Text style={styles.itemIcon}>📄</Text>
+        <View style={styles.iconContainerFile}>
+          <FileText size={22} color="#38BDF8" strokeWidth={2} />
+        </View>
         <View style={styles.itemInfo}>
-          <Text style={styles.itemName}>{item.filename}</Text>
+          <Text style={styles.itemName} numberOfLines={1}>
+            {item.filename}
+          </Text>
           <Text style={styles.itemMeta}>
             {formatSize(item.size)} • {new Date(item.updatedAt).toLocaleDateString("de-DE")}
           </Text>
         </View>
-        <Text style={styles.moreOptions}>•••</Text>
+        <MoreVertical size={20} color="#64748B" />
       </TouchableOpacity>
     );
   };
 
+  const statusBarHeight = Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0;
+
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#0B1120" translucent />
+
       {/* Header Bar */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>☁️ R2Sync Drive</Text>
-          <Text style={styles.headerSubtitle}>
+      <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
+        <View style={styles.headerLeft}>
+          <View style={styles.logoRow}>
+            <Cloud size={24} color="#F38020" strokeWidth={2.5} />
+            <Text style={styles.headerTitle}>R2Sync</Text>
+          </View>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
             {currentFolder ? `/${currentFolder}` : "Hauptverzeichnis"}
           </Text>
         </View>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
+
+        <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.syncBtn}
+            activeOpacity={0.8}
             onPress={async () => {
               await runAutoPhotoSync((status) => setSyncStatus(status));
               loadData();
             }}
           >
-            <Text style={styles.syncBtnText}>📸 Fotos sichern</Text>
+            <Camera size={15} color="#FFFFFF" strokeWidth={2.2} style={{ marginRight: 6 }} />
+            <Text style={styles.syncBtnText}>Fotos sichern</Text>
           </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.logoutBtn}
+            activeOpacity={0.8}
             onPress={async () => {
               await clearConfig();
               onLogout();
             }}
           >
-            <Text style={styles.logoutBtnText}>Abmelden</Text>
+            <LogOut size={16} color="#94A3B8" strokeWidth={2} />
           </TouchableOpacity>
         </View>
       </View>
@@ -223,8 +260,9 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       {/* Auto Photo Sync Progress Bar */}
       {syncStatus && (
         <View style={styles.syncBar}>
-          <Text style={styles.syncBarText}>
-            📸 {syncStatus.statusText}
+          <RefreshCw size={14} color="#F38020" strokeWidth={2.2} style={{ marginRight: 8 }} />
+          <Text style={styles.syncBarText} numberOfLines={1}>
+            {syncStatus.statusText}
           </Text>
         </View>
       )}
@@ -233,13 +271,15 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
       {currentFolder !== "" && (
         <TouchableOpacity
           style={styles.backBtn}
+          activeOpacity={0.7}
           onPress={() => {
             const parts = currentFolder.split("/");
             parts.pop();
             setCurrentFolder(parts.join("/"));
           }}
         >
-          <Text style={styles.backBtnText}>‹ Zurück in übergeordneten Ordner</Text>
+          <ArrowLeft size={16} color="#38BDF8" strokeWidth={2.2} style={{ marginRight: 8 }} />
+          <Text style={styles.backBtnText}>Zurück in übergeordneten Ordner</Text>
         </TouchableOpacity>
       )}
 
@@ -258,7 +298,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>📂</Text>
+            <Folder size={48} color="#334155" strokeWidth={1.5} style={{ marginBottom: 12 }} />
             <Text style={styles.emptyText}>Dieser Ordner ist leer.</Text>
           </View>
         }
@@ -277,39 +317,53 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           onPress={() => setIsActionModalVisible(false)}
         >
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{selectedFile?.filename}</Text>
-            <Text style={styles.modalSubtitle}>Freigabe & Aktionen auswählen</Text>
+            <View style={styles.modalHeader}>
+              <FileText size={22} color="#38BDF8" strokeWidth={2} style={{ marginRight: 10 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle} numberOfLines={1}>{selectedFile?.filename}</Text>
+                <Text style={styles.modalSubtitle}>Freigabe & Aktionen auswählen</Text>
+              </View>
+            </View>
 
             <TouchableOpacity
               style={styles.actionBtn}
+              activeOpacity={0.8}
               onPress={() => selectedFile && handleShareLink(selectedFile.path, 24)}
             >
-              <Text style={styles.actionBtnText}>🔗 Freigabelink (24 Std. Ablauf)</Text>
+              <Clock size={18} color="#F38020" strokeWidth={2} style={{ marginRight: 12 }} />
+              <Text style={styles.actionBtnText}>Freigabelink (24 Std. Ablauf)</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.actionBtn}
+              activeOpacity={0.8}
               onPress={() => selectedFile && handleShareLink(selectedFile.path, 168)}
             >
-              <Text style={styles.actionBtnText}>🔗 Freigabelink (7 Tage Ablauf)</Text>
+              <Clock size={18} color="#38BDF8" strokeWidth={2} style={{ marginRight: 12 }} />
+              <Text style={styles.actionBtnText}>Freigabelink (7 Tage Ablauf)</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.actionBtn}
+              activeOpacity={0.8}
               onPress={() => selectedFile && handleShareLink(selectedFile.path, null)}
             >
-              <Text style={styles.actionBtnText}>♾️ Dauerhaften Freigabelink</Text>
+              <InfinityIcon size={18} color="#A855F7" strokeWidth={2} style={{ marginRight: 12 }} />
+              <Text style={styles.actionBtnText}>Dauerhaften Freigabelink</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.actionBtn, styles.deleteBtn]}
+              activeOpacity={0.8}
               onPress={() => selectedFile && handleDelete(selectedFile.path)}
             >
-              <Text style={[styles.actionBtnText, styles.deleteBtnText]}>🗑️ Datei löschen</Text>
+              <Trash2 size={18} color="#FCA5A5" strokeWidth={2} style={{ marginRight: 12 }} />
+              <Text style={[styles.actionBtnText, styles.deleteBtnText]}>Datei löschen</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.cancelBtn}
+              activeOpacity={0.8}
               onPress={() => setIsActionModalVisible(false)}
             >
               <Text style={styles.cancelBtnText}>Abbrechen</Text>
@@ -324,33 +378,55 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0F172A",
+    backgroundColor: "#0B1120",
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+    backgroundColor: "#0F172A",
     borderBottomWidth: 1,
     borderBottomColor: "#1E293B",
   },
+  headerLeft: {
+    flex: 1,
+  },
+  logoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "800",
     color: "#F8FAFC",
+    marginLeft: 8,
+    letterSpacing: 0.3,
   },
   headerSubtitle: {
     fontSize: 12,
     color: "#F38020",
-    fontWeight: "600",
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   syncBtn: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#F38020",
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingVertical: 8,
+    borderRadius: 10,
     marginRight: 8,
+    shadowColor: "#F38020",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   syncBtnText: {
     color: "#FFFFFF",
@@ -358,34 +434,39 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   logoutBtn: {
-    backgroundColor: "#334155",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  logoutBtnText: {
-    color: "#94A3B8",
-    fontSize: 12,
-    fontWeight: "600",
+    backgroundColor: "#1E293B",
+    padding: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#334155",
   },
   syncBar: {
-    backgroundColor: "#F3802020",
-    borderColor: "#F3802050",
-    borderBottomWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1E293B",
+    borderColor: "#F3802060",
+    borderWidth: 1,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   syncBarText: {
-    color: "#F38020",
+    color: "#F8FAFC",
     fontSize: 13,
     fontWeight: "600",
+    flex: 1,
   },
   backBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: "#1E293B",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    backgroundColor: "#0F172A",
     borderBottomWidth: 1,
-    borderBottomColor: "#334155",
+    borderBottomColor: "#1E293B",
   },
   backBtnText: {
     color: "#38BDF8",
@@ -399,15 +480,29 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#1E293B",
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: "#334155",
   },
-  itemIcon: {
-    fontSize: 24,
-    marginRight: 12,
+  iconContainerFolder: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#F3802015",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  iconContainerFile: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#38BDF815",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
   },
   itemInfo: {
     flex: 1,
@@ -420,25 +515,12 @@ const styles = StyleSheet.create({
   itemMeta: {
     fontSize: 12,
     color: "#64748B",
-    marginTop: 2,
-  },
-  chevron: {
-    fontSize: 20,
-    color: "#64748B",
-    fontWeight: "600",
-  },
-  moreOptions: {
-    fontSize: 16,
-    color: "#64748B",
+    marginTop: 3,
   },
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 60,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 12,
   },
   emptyText: {
     color: "#64748B",
@@ -446,33 +528,39 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "flex-end",
   },
   modalContent: {
     backgroundColor: "#1E293B",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 22,
     borderWidth: 1,
     borderColor: "#334155",
   },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 18,
+  },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "800",
     color: "#F8FAFC",
-    marginBottom: 4,
   },
   modalSubtitle: {
     fontSize: 13,
     color: "#64748B",
-    marginBottom: 16,
+    marginTop: 2,
   },
   actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#0F172A",
     borderColor: "#334155",
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 14,
     paddingHorizontal: 16,
     marginBottom: 10,
