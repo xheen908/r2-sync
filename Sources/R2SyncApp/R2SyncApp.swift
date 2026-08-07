@@ -263,32 +263,80 @@ struct SettingsView: View {
     @ObservedObject var configManager: ConfigManager
     var onClose: () -> Void
 
+    // VPS Login Fields
+    @State private var serverUrl: String = "https://drive.ocpp-labs.com"
+    @State private var username: String = "admin"
+    @State private var password: String = ""
+    @State private var isConnectingVPS: Bool = false
+
+    // R2 Manual Fields
     @State private var accountId: String = ""
     @State private var accessKeyId: String = ""
     @State private var secretAccessKey: String = ""
     @State private var bucketName: String = ""
     @State private var syncFolderPath: String = ""
     @State private var publicDomainURL: String = ""
+
+    @State private var showManualR2Section: Bool = false
     @State private var statusMessage: String?
+    @State private var isSuccess: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Section(header: Text("Cloudflare R2 Zugangsdaten").font(.headline)) {
-                    TextField("Account ID:", text: $accountId, prompt: Text("z.B. 10c9109e9e342e2b4fc55e71ddf91c17"))
-                    TextField("Access Key ID:", text: $accessKeyId, prompt: Text("z.B. 6e87984a4bbe49caaee83a4d3eee39a0"))
-                    SecureField("Secret Access Key:", text: $secretAccessKey, prompt: Text("Schlüssel hier eingeben"))
-                    TextField("Bucket Name:", text: $bucketName, prompt: Text("z.B. easyfisk-docs"))
-                    TextField("Öffentliche Domain / URL:", text: $publicDomainURL, prompt: Text("z.B. https://pub-7934cd421fb044609578237788351fae.r2.dev"))
+                // Section 1: 1-Click VPS Account Login (Simple & Fast)
+                Section(header: Text("🚀 VPS Account-Verbindung (Empfohlen)").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Melde dich mit deinem VPS Server-Konto an. R2-Schlüssel werden automatisch geladen.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        TextField("Server URL:", text: $serverUrl, prompt: Text("https://drive.ocpp-labs.com"))
+                        TextField("Benutzername:", text: $username, prompt: Text("admin"))
+                        SecureField("Passwort:", text: $password, prompt: Text("Passwort eingeben"))
+
+                        HStack {
+                            Spacer()
+                            Button(action: connectVPS) {
+                                HStack {
+                                    if isConnectingVPS {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    } else {
+                                        Image(systemName: "bolt.fill")
+                                    }
+                                    Text("Mit VPS verbinden & R2-Konfiguration laden")
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(serverUrl.isEmpty || username.isEmpty || password.isEmpty || isConnectingVPS)
+                        }
+                        .padding(.top, 4)
+                    }
                 }
 
-                Section(header: Text("Lokales Verzeichnis").font(.headline)) {
+                // Section 2: Local Sync Folder Selection
+                Section(header: Text("📁 Lokaler Sync-Ordner").font(.headline)) {
                     HStack {
-                        TextField("Sync Ordner:", text: $syncFolderPath)
+                        TextField("Pfad:", text: $syncFolderPath)
                         Button("Durchsuchen...") {
                             selectFolder()
                         }
                     }
+                }
+
+                // Section 3: Expandable Advanced Manual R2 Keys
+                DisclosureGroup("⚙️ Erweiterte Cloudflare R2 Keys (Manuell)", isExpanded: $showManualR2Section) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("Account ID:", text: $accountId, prompt: Text("z.B. 10c9109e9e342e2b..."))
+                        TextField("Access Key ID:", text: $accessKeyId, prompt: Text("z.B. 6e87984a..."))
+                        SecureField("Secret Access Key:", text: $secretAccessKey, prompt: Text("Secret Key"))
+                        TextField("Bucket Name:", text: $bucketName, prompt: Text("easyfisk-docs"))
+                        TextField("Öffentliche Domain / URL:", text: $publicDomainURL, prompt: Text("https://drive.ocpp-labs.com"))
+                    }
+                    .padding(.top, 4)
                 }
             }
             .formStyle(.grouped)
@@ -297,9 +345,12 @@ struct SettingsView: View {
 
             HStack {
                 if let message = statusMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundColor(message.contains("gespeichert") ? .green : .red)
+                    HStack(spacing: 6) {
+                        Image(systemName: isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        Text(message)
+                    }
+                    .font(.caption)
+                    .foregroundColor(isSuccess ? .green : .red)
                 }
                 Spacer()
                 Button("Abbrechen") {
@@ -307,16 +358,15 @@ struct SettingsView: View {
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button("Speichern & Verbinden") {
-                    saveSettings()
+                Button("Speichern") {
+                    saveManualSettings()
                 }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.bordered)
             }
             .padding()
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 480, height: 380)
+        .frame(width: 500, height: 460)
         .onAppear {
             accountId = configManager.config.accountId
             accessKeyId = configManager.config.accessKeyId
@@ -324,6 +374,50 @@ struct SettingsView: View {
             bucketName = configManager.config.bucketName
             syncFolderPath = configManager.config.syncFolderPath
             publicDomainURL = configManager.config.publicDomainURL
+            
+            if configManager.config.publicDomainURL.contains("http") {
+                serverUrl = configManager.config.publicDomainURL
+            }
+        }
+    }
+
+    private func connectVPS() {
+        isConnectingVPS = true
+        statusMessage = nil
+
+        Task {
+            do {
+                let newConfig = try await configManager.fetchConfigFromVPS(
+                    serverUrl: serverUrl,
+                    username: username,
+                    password: password
+                )
+
+                DispatchQueue.main.async {
+                    self.accountId = newConfig.accountId
+                    self.accessKeyId = newConfig.accessKeyId
+                    self.secretAccessKey = newConfig.secretAccessKey
+                    self.bucketName = newConfig.bucketName
+                    self.publicDomainURL = newConfig.publicDomainURL
+
+                    // Restart Sync Engine with new credentials
+                    SyncEngineController.shared.startEngine(config: newConfig)
+
+                    self.isConnectingVPS = false
+                    self.isSuccess = true
+                    self.statusMessage = "Erfolgreich mit VPS verbunden! R2-Schlüssel geladen."
+
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        onClose()
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isConnectingVPS = false
+                    self.isSuccess = false
+                    self.statusMessage = "Fehler: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
@@ -337,9 +431,10 @@ struct SettingsView: View {
         }
     }
 
-    private func saveSettings() {
+    private func saveManualSettings() {
         guard !accountId.isEmpty, !accessKeyId.isEmpty, !secretAccessKey.isEmpty, !bucketName.isEmpty else {
-            statusMessage = "Bitte fülle alle R2 Felder aus."
+            isSuccess = false
+            statusMessage = "Bitte fülle alle R2 Felder aus oder verwende den VPS Login."
             return
         }
 
@@ -356,6 +451,7 @@ struct SettingsView: View {
         // Restart Sync Engine with new credentials
         SyncEngineController.shared.startEngine(config: newConfig)
 
+        isSuccess = true
         statusMessage = "Konfiguration erfolgreich gespeichert!"
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
