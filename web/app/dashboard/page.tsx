@@ -29,6 +29,8 @@ import {
   Plus,
   List,
   Download,
+  Upload,
+  Move,
 } from "lucide-react";
 
 interface FileItem {
@@ -75,6 +77,12 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // Drag & Drop Upload states
+  const [isDraggingExternal, setIsDraggingExternal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [draggedFileItem, setDraggedFileItem] = useState<FileItem | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+
   // Share Modal state
   const [shareModal, setShareModal] = useState<ShareModalData | null>(null);
   const [modalTab, setModalTab] = useState<"create" | "list">("create");
@@ -110,6 +118,73 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchFiles();
   }, []);
+
+  // Upload dropped files to current path
+  const uploadFiles = async (fileList: FileList | File[], targetFolder = currentPath) => {
+    if (!fileList || fileList.length === 0) return;
+    setUploading(true);
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folderPath", targetFolder);
+
+      try {
+        await fetch("/api/files/upload", {
+          method: "POST",
+          body: formData,
+        });
+      } catch (err) {
+        console.error("Error uploading file:", err);
+      }
+    }
+
+    setUploading(false);
+    fetchFiles();
+  };
+
+  // Move file into target folder
+  const moveFileToFolder = async (fileItem: FileItem, targetFolderPath: string) => {
+    try {
+      const res = await fetch("/api/files/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourcePath: fileItem.path,
+          targetFolderPath,
+        }),
+      });
+      if (res.ok) {
+        fetchFiles();
+      }
+    } catch (err) {
+      console.error("Error moving file:", err);
+    }
+  };
+
+  // External Drag Over Window
+  const handleWindowDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDraggingExternal(true);
+    }
+  };
+
+  const handleWindowDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.relatedTarget === null) {
+      setIsDraggingExternal(false);
+    }
+  };
+
+  const handleWindowDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingExternal(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      uploadFiles(e.dataTransfer.files);
+    }
+  };
 
   // Fetch active share links when opening Share Modal
   const fetchActiveShares = async (filePath: string) => {
@@ -165,7 +240,7 @@ export default function DashboardPage() {
       if (data.shareUrl) {
         setGeneratedLink(data.shareUrl);
         fetchActiveShares(shareModal.filePath);
-        fetchFiles(); // Update active link count badge on file list
+        fetchFiles();
       }
     } catch (err) {
       console.error("Error creating share link", err);
@@ -184,7 +259,7 @@ export default function DashboardPage() {
         if (shareModal) {
           fetchActiveShares(shareModal.filePath);
         }
-        fetchFiles(); // Refresh active share counts on table
+        fetchFiles();
       }
     } catch (err) {
       console.error("Error revoking share link", err);
@@ -222,7 +297,6 @@ export default function DashboardPage() {
     return <FileText className="w-5 h-5 text-blue-400" />;
   };
 
-  // Group files into hierarchical folders & files based on currentPath or searchQuery
   const displayRows = useMemo<ExplorerRow[]>(() => {
     if (searchQuery.trim().length > 0) {
       const query = searchQuery.toLowerCase();
@@ -264,7 +338,6 @@ export default function DashboardPage() {
     return [...folderRows, ...fileRows];
   }, [files, currentPath, searchQuery]);
 
-  // Breadcrumbs path items
   const breadcrumbs = useMemo(() => {
     if (!currentPath) return [];
     const parts = currentPath.split("/").filter(Boolean);
@@ -309,7 +382,33 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+    <div
+      onDragOver={handleWindowDragOver}
+      onDragLeave={handleWindowDragLeave}
+      onDrop={handleWindowDrop}
+      className="min-h-screen flex flex-col bg-slate-950 text-slate-100 relative"
+    >
+      {/* External Dropzone Overlay */}
+      {isDraggingExternal && (
+        <div className="fixed inset-0 bg-orange-500/20 backdrop-blur-md border-4 border-dashed border-orange-500 z-50 flex flex-col items-center justify-center p-6 text-center animate-fade-in pointer-events-none">
+          <div className="w-20 h-20 rounded-3xl bg-orange-500 text-white flex items-center justify-center shadow-2xl shadow-orange-500/50 mb-4 animate-bounce">
+            <Upload className="w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-1">Dateien hier ablegen</h2>
+          <p className="text-sm text-orange-200">
+            Wird hochgeladen in: <span className="font-mono bg-slate-900/80 px-2 py-1 rounded text-orange-400">{currentPath || "Root"}</span>
+          </p>
+        </div>
+      )}
+
+      {/* Uploading Notification */}
+      {uploading && (
+        <div className="fixed bottom-6 right-6 bg-slate-900 border border-slate-700 text-white px-5 py-3 rounded-2xl shadow-2xl z-50 flex items-center gap-3 animate-slide-up">
+          <RefreshCw className="w-5 h-5 text-orange-500 animate-spin" />
+          <span className="text-sm font-medium">Dateien werden nach R2 hochgeladen...</span>
+        </div>
+      )}
+
       {/* Top Navbar */}
       <header className="h-16 border-b border-slate-800 bg-slate-900/60 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-3">
@@ -329,6 +428,18 @@ export default function DashboardPage() {
 
         {/* Right Actions */}
         <div className="flex items-center gap-3">
+          {/* File Upload Button */}
+          <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium cursor-pointer shadow-md shadow-orange-500/20 transition-all active:scale-95">
+            <Upload className="w-4 h-4" />
+            <span className="hidden sm:inline">Hochladen</span>
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+            />
+          </label>
+
           <button
             onClick={fetchFiles}
             className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition-colors"
@@ -352,7 +463,17 @@ export default function DashboardPage() {
         {/* Toolbar & Search */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/40 p-4 rounded-2xl border border-slate-800/80">
           {/* Breadcrumb Navigation */}
-          <div className="flex items-center gap-1.5 overflow-x-auto text-sm text-slate-300 w-full sm:w-auto py-1">
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (draggedFileItem) {
+                moveFileToFolder(draggedFileItem, "");
+                setDraggedFileItem(null);
+              }
+            }}
+            className="flex items-center gap-1.5 overflow-x-auto text-sm text-slate-300 w-full sm:w-auto py-1"
+          >
             <button
               onClick={() => setCurrentPath("")}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors ${
@@ -364,7 +485,18 @@ export default function DashboardPage() {
             </button>
 
             {breadcrumbs.map((b) => (
-              <div key={b.path} className="flex items-center gap-1.5">
+              <div
+                key={b.path}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedFileItem) {
+                    moveFileToFolder(draggedFileItem, b.path);
+                    setDraggedFileItem(null);
+                  }
+                }}
+                className="flex items-center gap-1.5"
+              >
                 <ChevronRight className="w-4 h-4 text-slate-600 shrink-0" />
                 <button
                   onClick={() => setCurrentPath(b.path)}
@@ -418,7 +550,7 @@ export default function DashboardPage() {
               <Folder className="w-12 h-12 text-slate-700" />
               <p className="text-base font-medium">Dieser Ordner ist leer</p>
               <p className="text-xs text-slate-600">
-                Synchronisierte Dateien erscheinen automatisch in dieser Ordnerstruktur.
+                Ziehe Dateien von deinem PC hierher zum Hochladen oder Verschieben.
               </p>
             </div>
           ) : (
@@ -435,17 +567,46 @@ export default function DashboardPage() {
                 <tbody className="divide-y divide-slate-800/60">
                   {displayRows.map((row, idx) => {
                     if (row.isFolder) {
+                      const isHoveredTarget = dragOverFolder === row.fullPath;
                       return (
                         <tr
                           key={`folder_${row.fullPath}_${idx}`}
                           onClick={() => setCurrentPath(row.fullPath)}
-                          className="hover:bg-slate-800/50 cursor-pointer transition-colors group"
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setDragOverFolder(row.fullPath);
+                          }}
+                          onDragLeave={() => setDragOverFolder(null)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOverFolder(null);
+
+                            // External files dropped directly onto folder
+                            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                              uploadFiles(e.dataTransfer.files, row.fullPath);
+                            }
+                            // Internal file dragged onto folder
+                            else if (draggedFileItem) {
+                              moveFileToFolder(draggedFileItem, row.fullPath);
+                              setDraggedFileItem(null);
+                            }
+                          }}
+                          className={`cursor-pointer transition-all group ${
+                            isHoveredTarget
+                              ? "bg-orange-500/20 border-2 border-orange-500"
+                              : "hover:bg-slate-800/50"
+                          }`}
                         >
                           <td className="py-3.5 px-4 flex items-center gap-3">
                             <Folder className="w-5 h-5 text-amber-400 fill-amber-400/20 group-hover:scale-110 transition-transform" />
                             <span className="font-semibold text-slate-200 group-hover:text-amber-400 transition-colors">
                               {row.name}
                             </span>
+                            {isHoveredTarget && (
+                              <span className="text-[10px] bg-orange-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">
+                                Hier ablegen
+                              </span>
+                            )}
                           </td>
                           <td className="py-3.5 px-4 text-slate-400 text-xs">
                             {row.itemCount} {row.itemCount === 1 ? "Datei" : "Dateien"}
@@ -461,9 +622,13 @@ export default function DashboardPage() {
                       return (
                         <tr
                           key={file.id}
-                          className="hover:bg-slate-800/40 transition-colors group"
+                          draggable
+                          onDragStart={() => setDraggedFileItem(file)}
+                          onDragEnd={() => setDraggedFileItem(null)}
+                          className="hover:bg-slate-800/40 transition-colors group cursor-grab active:cursor-grabbing"
                         >
                           <td className="py-3.5 px-4 flex items-center gap-3">
+                            <Move className="w-3.5 h-3.5 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
                             {getFileIcon(file.filename)}
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-2">
@@ -725,7 +890,6 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      {/* Action buttons for each link */}
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           onClick={() => copyToClipboard(share.shareUrl, share.id)}
