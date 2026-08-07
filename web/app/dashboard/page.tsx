@@ -281,6 +281,32 @@ export default function DashboardPage() {
     setCurrentPath(parts.join("/"));
   };
 
+  const handleDirectDownload = (file: FileItem) => {
+    const downloadUrl = `/api/files/download?filePath=${encodeURIComponent(file.path)}`;
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = file.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const handleDeleteFile = async (file: FileItem) => {
+    if (!confirm(`Möchtest du "${file.filename}" wirklich unwiderruflich aus R2 löschen?`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/files?filePath=${encodeURIComponent(file.path)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchFiles();
+      }
+    } catch (err) {
+      console.error("Error deleting file", err);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
       {/* Top Navbar */}
@@ -473,14 +499,34 @@ export default function DashboardPage() {
                             })}
                           </td>
                           <td className="py-3.5 px-4 text-right">
-                            <button
-                              onClick={() => openShareModal(file)}
-                              className="p-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center gap-1.5 text-xs font-medium transition-all ml-auto"
-                              title="Freigabelinks verwalten & erstellen"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                              <span>Freigeben</span>
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5 ml-auto">
+                              <button
+                                onClick={() => handleDirectDownload(file)}
+                                className="p-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center gap-1 text-xs font-medium transition-all"
+                                title="Datei direkt herunterladen"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Download</span>
+                              </button>
+
+                              <button
+                                onClick={() => openShareModal(file)}
+                                className="p-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center gap-1 text-xs font-medium transition-all"
+                                title="Freigabelinks verwalten & erstellen"
+                              >
+                                <Share2 className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Freigeben</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteFile(file)}
+                                className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 hover:border-red-500/50 flex items-center gap-1 text-xs font-medium transition-all"
+                                title="Datei aus R2 & DB löschen"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Löschen</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

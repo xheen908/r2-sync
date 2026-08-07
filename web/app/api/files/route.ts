@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { s3Client, r2BucketName } from "@/lib/r2";
-import { ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 export const dynamic = "force-dynamic";
 
@@ -65,4 +65,36 @@ export async function GET() {
   });
 
   return NextResponse.json({ files: formattedFiles });
+}
+
+export async function DELETE(request: Request) {
+  const url = new URL(request.url);
+  const filePath = url.searchParams.get("filePath");
+
+  if (!filePath) {
+    return NextResponse.json({ error: "filePath parameter is required" }, { status: 400 });
+  }
+
+  // 1. Delete object from Cloudflare R2
+  try {
+    const deleteCmd = new DeleteObjectCommand({
+      Bucket: r2BucketName,
+      Key: filePath,
+    });
+    await s3Client.send(deleteCmd);
+  } catch (r2Err) {
+    console.warn("File delete API: R2 delete failed:", r2Err);
+  }
+
+  // 2. Delete file record & associated share links from SQLite DB
+  try {
+    const { getDb } = await import("@/lib/db");
+    const db = await getDb();
+    await db.run("DELETE FROM files WHERE path = ?", [filePath]);
+    await db.run("DELETE FROM share_links WHERE file_path = ?", [filePath]);
+  } catch (dbErr) {
+    console.warn("File delete API: SQLite record delete failed:", dbErr);
+  }
+
+  return NextResponse.json({ success: true, filePath });
 }
