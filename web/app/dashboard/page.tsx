@@ -45,6 +45,7 @@ import {
   Sliders,
   ChevronDown,
 } from "lucide-react";
+import Navbar from "@/components/Navbar";
 
 interface FileItem {
   id: string;
@@ -600,134 +601,21 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* SLEEK HEADER BAR WITH POPOVER MENU */}
-      <header className="h-16 border-b border-slate-800/90 bg-slate-900/80 backdrop-blur-xl px-6 flex items-center justify-between sticky top-0 z-30">
-        {/* Left Brand & R2 Status Badge */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentPath("")}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-lg shadow-orange-500/25">
-              <Cloud className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="font-bold text-white tracking-tight flex items-center gap-2 text-base">
-                R2Sync Drive
-              </h1>
-              <p className="text-[11px] text-slate-400">easyfisk-docs • ocpp-labs.com</p>
-            </div>
-          </div>
-
-          {/* R2 Connection Pill Badge */}
-          <div
-            onClick={() => router.push("/settings")}
-            className={`cursor-pointer hidden md:flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
-              isConnected
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
-                : "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20"
-            }`}
-            title={isConnected ? "Cloudflare R2 Verbunden" : r2Error || "Einstellungen öffnen"}
-          >
-            <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
-            <span>{isConnected ? `R2 Verbunden (${r2Config?.bucketName || "easyfisk-docs"})` : "R2 Getrennt"}</span>
-          </div>
-        </div>
-
-        {/* Right Action Icons & Settings Popover Menu */}
-        <div className="flex items-center gap-3">
-          {/* File Upload Button */}
-          <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold cursor-pointer shadow-md shadow-orange-500/20 transition-all active:scale-95">
-            <Upload className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Hochladen</span>
-            <input
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => e.target.files && uploadFiles(e.target.files)}
-            />
-          </label>
-
-          <button
-            onClick={fetchFiles}
-            className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition-colors"
-            title="Aktualisieren"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
-
-          {/* SETTINGS GEAR ICON WITH POPOVER MENU */}
-          <div className="relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setPopoverOpen(!popoverOpen);
-              }}
-              className={`flex items-center gap-2 p-2 rounded-xl border transition-all ${
-                popoverOpen
-                  ? "bg-orange-500/20 text-orange-400 border-orange-500/40"
-                  : "bg-slate-800/80 hover:bg-slate-700 text-slate-200 border-slate-700/60"
-              }`}
-              title="Einstellungen & Konto"
-            >
-              <Settings className={`w-4 h-4 transition-transform ${popoverOpen ? "rotate-90 text-orange-400" : ""}`} />
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {/* POPOVER DROPDOWN MENU */}
-            {popoverOpen && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="absolute right-0 mt-2 w-64 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl z-50 p-2 text-xs text-slate-200 animate-fade-in"
-              >
-                {/* Admin User Header */}
-                <div className="px-3 py-2.5 mb-1.5 border-b border-slate-800 flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold uppercase">
-                    {currentUsername.substring(0, 2)}
-                  </div>
-                  <div className="flex flex-col truncate">
-                    <span className="font-semibold text-white truncate">{currentUsername}</span>
-                    <span className="text-[10px] text-slate-400">Administrator</span>
-                  </div>
-                </div>
-
-                {/* Popover Items */}
-                <button
-                  onClick={() => {
-                    setPopoverOpen(false);
-                    router.push("/settings");
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-800 text-slate-200 hover:text-white transition-colors text-left font-medium"
-                >
-                  <Database className="w-4 h-4 text-amber-400" />
-                  <span>Cloudflare R2 Keys</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setPopoverOpen(false);
-                    router.push("/settings");
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-800 text-slate-200 hover:text-white transition-colors text-left font-medium"
-                >
-                  <User className="w-4 h-4 text-orange-400" />
-                  <span>Konto & Sicherheit</span>
-                </button>
-
-                <div className="h-px bg-slate-800 my-1" />
-
-                <button
-                  onClick={() => {
-                    setPopoverOpen(false);
-                    handleLogout();
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-red-500/20 text-red-400 transition-colors text-left font-medium"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Abmelden</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+      {/* GLOBAL TOP NAVBAR HEADER */}
+      <Navbar
+        isConnected={isConnected}
+        bucketName={r2Config?.bucketName || "easyfisk-docs"}
+        username={currentUsername}
+        onUploadClick={() => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.multiple = true;
+          input.onchange = (e: any) => e.target.files && uploadFiles(e.target.files);
+          input.click();
+        }}
+        onRefreshClick={fetchFiles}
+        loading={loading}
+      />
 
       {/* MAIN FILE EXPLORER */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">

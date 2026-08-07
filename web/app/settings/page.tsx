@@ -18,6 +18,7 @@ import {
   Lock,
   Check,
 } from "lucide-react";
+import Navbar from "@/components/Navbar";
 
 interface R2SettingsData {
   accountId: string;
@@ -160,49 +161,12 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 selection:bg-orange-500 selection:text-white">
-      {/* Top Header */}
-      <header className="h-16 border-b border-slate-800/90 bg-slate-900/80 backdrop-blur-xl px-6 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-colors border border-slate-700/50"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Zurück zum Drive</span>
-          </button>
-
-          <div className="h-4 w-px bg-slate-800 hidden sm:block" />
-
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-md shadow-orange-500/20">
-              <Cloud className="w-5 h-5 text-white" />
-            </div>
-            <h1 className="font-bold text-white tracking-tight text-base">Konto & Systemeinstellungen</h1>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Connection Status Badge */}
-          <div
-            className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border ${
-              isConnected
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                : "bg-red-500/10 text-red-400 border-red-500/30"
-            }`}
-          >
-            <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
-            <span>{isConnected ? `R2 Verbunden (${r2Config?.bucketName || "easyfisk-docs"})` : "R2 Getrennt"}</span>
-          </div>
-
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-red-500/20 hover:text-red-400 text-slate-300 text-xs font-medium transition-colors border border-slate-700/50"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Abmelden</span>
-          </button>
-        </div>
-      </header>
+      {/* GLOBAL TOP NAVBAR HEADER */}
+      <Navbar
+        isConnected={isConnected}
+        bucketName={r2Config?.bucketName || "easyfisk-docs"}
+        username={currentUsername}
+      />
 
       {/* Main Settings Page Content */}
       <main className="flex-1 max-w-5xl w-full mx-auto p-6 md:p-8 space-y-8">
