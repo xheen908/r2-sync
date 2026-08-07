@@ -24,6 +24,10 @@ import {
   ChevronRight,
   Home,
   ArrowLeft,
+  Trash2,
+  ExternalLink,
+  Plus,
+  List,
 } from "lucide-react";
 
 interface FileItem {
@@ -39,6 +43,14 @@ interface FileItem {
 interface ShareModalData {
   filePath: string;
   filename: string;
+}
+
+interface ActiveShareItem {
+  id: string;
+  shareUrl: string;
+  expiresAt: number | null;
+  requiresPassword: boolean;
+  createdAt: number;
 }
 
 interface DirectoryRow {
@@ -64,10 +76,15 @@ export default function DashboardPage() {
 
   // Share Modal state
   const [shareModal, setShareModal] = useState<ShareModalData | null>(null);
+  const [modalTab, setModalTab] = useState<"create" | "list">("create");
+  const [activeShares, setActiveShares] = useState<ActiveShareItem[]>([]);
+  const [loadingActiveShares, setLoadingActiveShares] = useState(false);
+
+  // Share link creation options
   const [ttlHours, setTtlHours] = useState<number>(24);
   const [password, setPassword] = useState("");
   const [generatedLink, setGeneratedLink] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
   const fetchFiles = async () => {
@@ -92,6 +109,33 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchFiles();
   }, []);
+
+  // Fetch active share links when opening Share Modal
+  const fetchActiveShares = async (filePath: string) => {
+    setLoadingActiveShares(true);
+    try {
+      const res = await fetch(`/api/share?filePath=${encodeURIComponent(filePath)}`);
+      const data = await res.json();
+      if (data.shares) {
+        setActiveShares(data.shares);
+        if (data.shares.length > 0 && !generatedLink) {
+          setModalTab("list");
+        }
+      }
+    } catch (err) {
+      console.error("Error loading active shares", err);
+    } finally {
+      setLoadingActiveShares(false);
+    }
+  };
+
+  const openShareModal = (file: FileItem) => {
+    setShareModal({ filePath: file.path, filename: file.filename });
+    setGeneratedLink("");
+    setPassword("");
+    setModalTab("create");
+    fetchActiveShares(file.path);
+  };
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -119,6 +163,8 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.shareUrl) {
         setGeneratedLink(data.shareUrl);
+        fetchActiveShares(shareModal.filePath);
+        fetchFiles(); // Update active link count badge on file list
       }
     } catch (err) {
       console.error("Error creating share link", err);
@@ -127,10 +173,27 @@ export default function DashboardPage() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
+  const handleRevokeShareLink = async (shareId: string) => {
+    try {
+      const res = await fetch(`/api/share?shareId=${encodeURIComponent(shareId)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setActiveShares((prev) => prev.filter((s) => s.id !== shareId));
+        if (shareModal) {
+          fetchActiveShares(shareModal.filePath);
+        }
+        fetchFiles(); // Refresh active share counts on table
+      }
+    } catch (err) {
+      console.error("Error revoking share link", err);
+    }
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const formatBytes = (bytes: number) => {
@@ -161,7 +224,6 @@ export default function DashboardPage() {
   // Group files into hierarchical folders & files based on currentPath or searchQuery
   const displayRows = useMemo<ExplorerRow[]>(() => {
     if (searchQuery.trim().length > 0) {
-      // Global search mode
       const query = searchQuery.toLowerCase();
       return files
         .filter((f) => f.filename.toLowerCase().includes(query) || f.path.toLowerCase().includes(query))
@@ -182,11 +244,9 @@ export default function DashboardPage() {
       const parts = relativePath.split("/");
 
       if (parts.length > 1) {
-        // It's inside a subfolder
         const folderName = parts[0];
         folderMap.set(folderName, (folderMap.get(folderName) || 0) + 1);
       } else {
-        // Direct file in current folder
         fileList.push(f);
       }
     }
@@ -414,14 +474,9 @@ export default function DashboardPage() {
                           </td>
                           <td className="py-3.5 px-4 text-right">
                             <button
-                              onClick={() =>
-                                setShareModal({
-                                  filePath: file.path,
-                                  filename: file.filename,
-                                })
-                              }
+                              onClick={() => openShareModal(file)}
                               className="p-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center gap-1.5 text-xs font-medium transition-all ml-auto"
-                              title="Ablaufenden Freigabelink erstellen"
+                              title="Freigabelinks verwalten & erstellen"
                             >
                               <Share2 className="w-3.5 h-3.5" />
                               <span>Freigeben</span>
@@ -438,10 +493,10 @@ export default function DashboardPage() {
         </div>
       </main>
 
-      {/* EXPIRING SHARE LINK MODAL */}
+      {/* SHARE MODAL WITH REVOKE / DELETE FEATURE */}
       {shareModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl relative">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-2xl p-6 shadow-2xl relative">
             <button
               onClick={() => {
                 setShareModal(null);
@@ -452,98 +507,203 @@ export default function DashboardPage() {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/30 text-orange-400 flex items-center justify-center">
                 <Share2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-white text-lg">Freigabelink erstellen</h3>
+                <h3 className="font-bold text-white text-lg">Freigabelinks verwalten</h3>
                 <p className="text-xs text-slate-400 truncate max-w-xs">
                   {shareModal.filename}
                 </p>
               </div>
             </div>
 
-            {!generatedLink ? (
-              <form onSubmit={handleCreateShareLink} className="space-y-4">
-                {/* Expiration Time */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-orange-400" />
-                    <span>Ablaufzeit</span>
-                  </label>
-                  <select
-                    value={ttlHours}
-                    onChange={(e) => setTtlHours(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-sm text-white outline-none focus:border-orange-500"
-                  >
-                    <option value={1}>1 Stunde</option>
-                    <option value={24}>24 Stunden (1 Tag)</option>
-                    <option value={168}>7 Tage</option>
-                    <option value={720}>30 Tage</option>
-                    <option value={0}>Dauerhaft (Kein Ablaufdatum)</option>
-                  </select>
-                </div>
+            {/* Tabs Header */}
+            <div className="flex items-center gap-2 border-b border-slate-800 mb-5 pb-2">
+              <button
+                onClick={() => setModalTab("create")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  modalTab === "create"
+                    ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                    : "text-slate-400 hover:bg-slate-800"
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Neuen Link erstellen</span>
+              </button>
 
-                {/* Password Protection */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Passwortschutz (Optional)</span>
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Leer lassen für keinen Passwortschutz"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
-                  />
-                </div>
+              <button
+                onClick={() => setModalTab("list")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  modalTab === "list"
+                    ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                    : "text-slate-400 hover:bg-slate-800"
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                <span>Aktive Links ({activeShares.length})</span>
+              </button>
+            </div>
 
-                <button
-                  type="submit"
-                  disabled={generating}
-                  className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-medium py-2.5 rounded-xl shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2 mt-6"
-                >
-                  {generating ? "Generiere..." : "Freigabelink erzeugen"}
-                </button>
-              </form>
-            ) : (
-              <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span>Freigabelink erfolgreich in Cloudflare D1 / SQLite erstellt!</span>
-                </div>
+            {/* TAB 1: CREATE NEW SHARE LINK */}
+            {modalTab === "create" && (
+              <>
+                {!generatedLink ? (
+                  <form onSubmit={handleCreateShareLink} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-orange-400" />
+                        <span>Ablaufzeit</span>
+                      </label>
+                      <select
+                        value={ttlHours}
+                        onChange={(e) => setTtlHours(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-sm text-white outline-none focus:border-orange-500"
+                      >
+                        <option value={1}>1 Stunde</option>
+                        <option value={24}>24 Stunden (1 Tag)</option>
+                        <option value={168}>7 Tage</option>
+                        <option value={720}>30 Tage</option>
+                        <option value={0}>Dauerhaft (Kein Ablaufdatum)</option>
+                      </select>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                    Dein Freigabelink:
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={generatedLink}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-sm text-orange-400 font-mono outline-none"
-                    />
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Passwortschutz (Optional)</span>
+                      </label>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Leer lassen für keinen Passwortschutz"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-600"
+                      />
+                    </div>
+
                     <button
-                      onClick={() => copyToClipboard(generatedLink)}
-                      className="px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-medium text-sm flex items-center gap-1.5 transition-all shadow-md shadow-orange-500/20"
+                      type="submit"
+                      disabled={generating}
+                      className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-medium py-2.5 rounded-xl shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2 mt-6"
                     >
-                      {copied ? (
-                        <>
-                          <Check className="w-4 h-4" />
-                          <span>Kopiert</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4" />
-                          <span>Kopieren</span>
-                        </>
-                      )}
+                      {generating ? "Generiere..." : "Freigabelink erzeugen"}
                     </button>
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>Freigabelink erfolgreich erstellt!</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                        Dein Freigabelink:
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={generatedLink}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-3 text-sm text-orange-400 font-mono outline-none"
+                        />
+                        <button
+                          onClick={() => copyToClipboard(generatedLink, "new_link")}
+                          className="px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-medium text-sm flex items-center gap-1.5 transition-all shadow-md shadow-orange-500/20 shrink-0"
+                        >
+                          {copiedId === "new_link" ? (
+                            <>
+                              <Check className="w-4 h-4" />
+                              <span>Kopiert</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4" />
+                              <span>Kopieren</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
+              </>
+            )}
+
+            {/* TAB 2: ACTIVE SHARES LIST WITH REVOKE / DELETE BUTTON */}
+            {modalTab === "list" && (
+              <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                {loadingActiveShares ? (
+                  <div className="p-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />
+                    <span>Aktive Links werden geladen...</span>
+                  </div>
+                ) : activeShares.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
+                    <Share2 className="w-8 h-8 text-slate-700" />
+                    <span>Keine aktiven Freigabelinks für diese Datei vorhanden</span>
+                  </div>
+                ) : (
+                  activeShares.map((share) => (
+                    <div
+                      key={share.id}
+                      className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between gap-3 group hover:border-slate-700 transition-colors"
+                    >
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-xs font-mono text-orange-400 truncate">
+                          {share.shareUrl}
+                        </span>
+                        <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-slate-500" />
+                            {share.expiresAt
+                              ? `Ablauf: ${new Date(share.expiresAt).toLocaleDateString("de-DE", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}`
+                              : "Dauerhaft"}
+                          </span>
+
+                          {share.requiresPassword && (
+                            <span className="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 text-[10px] font-semibold flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5" />
+                              <span>Passwort</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action buttons for each link */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => copyToClipboard(share.shareUrl, share.id)}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors text-xs flex items-center gap-1"
+                          title="Link kopieren"
+                        >
+                          {copiedId === share.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => handleRevokeShareLink(share.id)}
+                          className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors text-xs flex items-center gap-1"
+                          title="Freigabelink löschen (unbrauchbar machen)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Löschen</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>

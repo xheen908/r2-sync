@@ -1,12 +1,52 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { s3Client, r2BucketName } from "@/lib/r2";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+
+export const dynamic = "force-dynamic";
 
 async function hashPassword(password: string): Promise<string> {
   return crypto.createHash("sha256").update(password).digest("hex");
 }
 
+// 1. GET /api/share?filePath=... -> List active share links for a file
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const filePath = url.searchParams.get("filePath");
+
+  if (!filePath) {
+    return NextResponse.json({ error: "filePath parameter is required" }, { status: 400 });
+  }
+
+  let shares: any[] = [];
+  const now = Date.now();
+
+  try {
+    const { getDb } = await import("@/lib/db");
+    const db = await getDb();
+    shares = await db.all(
+      `SELECT * FROM share_links WHERE file_path = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC`,
+      [filePath, now]
+    );
+  } catch (dbErr) {
+    console.warn("Share list API: SQLite lookup failed", dbErr);
+  }
+
+  const baseUrl = process.env.R2_PUBLIC_DOMAIN_URL || "https://drive.ocpp-labs.com";
+  const cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+
+  const formattedShares = shares.map((s) => ({
+    id: s.id,
+    shareUrl: `${cleanBaseUrl}/s/${s.id}`,
+    expiresAt: s.expires_at,
+    requiresPassword: !!s.password_hash,
+    createdAt: s.created_at,
+  }));
+
+  return NextResponse.json({ shares: formattedShares });
+}
+
+// 2. POST /api/share -> Create new share link
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -84,4 +124,36 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+// 3. DELETE /api/share?shareId=... -> Delete/Revoke share link
+export async function DELETE(request: Request) {
+  const url = new URL(request.url);
+  const shareId = url.searchParams.get("shareId");
+
+  if (!shareId) {
+    return NextResponse.json({ error: "shareId parameter is required" }, { status: 400 });
+  }
+
+  // 1. Delete from SQLite
+  try {
+    const { getDb } = await import("@/lib/db");
+    const db = await getDb();
+    await db.run("DELETE FROM share_links WHERE id = ?", [shareId]);
+  } catch (dbErr) {
+    console.warn("Share delete API: SQLite deletion failed:", dbErr);
+  }
+
+  // 2. Delete metadata file from R2 bucket
+  try {
+    const deleteCommand = new DeleteObjectCommand({
+      Bucket: r2BucketName,
+      Key: `.shares/${shareId}.json`,
+    });
+    await s3Client.send(deleteCommand);
+  } catch (r2Err) {
+    console.warn("Share delete API: R2 backup file deletion failed:", r2Err);
+  }
+
+  return NextResponse.json({ success: true, shareId });
 }
