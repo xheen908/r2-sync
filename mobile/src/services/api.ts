@@ -24,7 +24,21 @@ export const STORAGE_KEYS = {
   CONFIG: "r2sync_config",
   LAST_SYNC_TIME: "r2sync_last_photo_sync_time",
   SYNCED_ASSET_IDS: "r2sync_synced_asset_ids",
+  WIFI_ONLY_SYNC: "r2sync_wifi_only_sync",
 };
+
+export async function getWifiOnlySyncSetting(): Promise<boolean> {
+  try {
+    const val = await AsyncStorage.getItem(STORAGE_KEYS.WIFI_ONLY_SYNC);
+    return val === "true"; // Default to false unless explicitly enabled
+  } catch {
+    return false;
+  }
+}
+
+export async function setWifiOnlySyncSetting(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEYS.WIFI_ONLY_SYNC, enabled ? "true" : "false");
+}
 
 export async function getSavedConfig(): Promise<ApiConfig | null> {
   try {
@@ -210,3 +224,66 @@ export async function generateShareLink(filePath: string, ttlHours: number | nul
   const data = await response.json();
   return data.shareUrl;
 }
+
+export async function fetchServerSettings(): Promise<{ config: any; isConnected: boolean; errorDetails?: string }> {
+  const cfg = await getSavedConfig();
+  if (!cfg) throw new Error("Nicht angemeldet");
+
+  const response = await fetch(`${cfg.serverUrl}/api/settings`);
+  if (!response.ok) throw new Error("Fehler beim Laden der Einstellungen");
+  return response.json();
+}
+
+export async function saveServerR2Settings(settings: {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucketName: string;
+  publicDomainUrl: string;
+}): Promise<boolean> {
+  const cfg = await getSavedConfig();
+  if (!cfg) throw new Error("Nicht angemeldet");
+
+  const response = await fetch(`${cfg.serverUrl}/api/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+
+  if (response.ok) {
+    // Update local saved config with new bucket/accountId/publicDomainUrl
+    const updatedCfg = {
+      ...cfg,
+      accountId: settings.accountId || cfg.accountId,
+      bucketName: settings.bucketName || cfg.bucketName,
+      publicDomainUrl: settings.publicDomainUrl || cfg.publicDomainUrl,
+    };
+    await saveConfig(updatedCfg);
+  }
+
+  return response.ok;
+}
+
+export async function updateAccountCredentials(currentUsername: string, newUsername?: string, newPassword?: string): Promise<{ success: boolean; updatedUsername?: string; error?: string }> {
+  const cfg = await getSavedConfig();
+  if (!cfg) throw new Error("Nicht angemeldet");
+
+  const response = await fetch(`${cfg.serverUrl}/api/account`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currentUsername, newUsername, newPassword }),
+  });
+
+  const data = await response.json();
+  if (response.ok && data.success) {
+    if (data.updatedUsername) {
+      cfg.username = data.updatedUsername;
+    }
+    if (newPassword) {
+      cfg.password = newPassword;
+    }
+    await saveConfig(cfg);
+  }
+  return data;
+}
+

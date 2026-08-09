@@ -11,7 +11,8 @@ import * as BackgroundFetch from "expo-background-fetch";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { uploadFileToVPS, STORAGE_KEYS } from "./api";
+import * as Network from "expo-network";
+import { uploadFileToVPS, STORAGE_KEYS, getWifiOnlySyncSetting } from "./api";
 
 export interface SyncProgressStatus {
   isSyncing: boolean;
@@ -139,6 +140,21 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
   isSyncInProgress = true;
   try {
+    // Check Wi-Fi restriction setting
+    const wifiOnly = await getWifiOnlySyncSetting();
+    if (wifiOnly) {
+      try {
+        const netState = await Network.getNetworkStateAsync();
+        if (netState.type !== Network.NetworkStateType.WIFI) {
+          console.log("[PhotoSync] Wi-Fi only sync is enabled and device is not on Wi-Fi. Skipping sync.");
+          onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Warte auf WLAN-Verbindung..." });
+          return 0;
+        }
+      } catch (netErr) {
+        console.warn("[PhotoSync] Failed to check network state", netErr);
+      }
+    }
+
     const hasPerms = await requestMediaPermissions();
     if (!hasPerms) {
       onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Kein Zugriff auf Fotogalerie" });
@@ -239,6 +255,11 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       statusText: finishText,
     });
     await showProgressNotification("✅ R2Sync Foto-Backup", finishText, true);
+
+    // Keep status visible for 8 seconds after finish
+    setTimeout(() => {
+      onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "" });
+    }, 8000);
 
     return successCount;
   } catch (err: any) {

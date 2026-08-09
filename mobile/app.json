@@ -2,7 +2,8 @@
   "expo": {
     "name": "R2Sync",
     "slug": "r2sync-mobile",
-    "version": "0.1.53",
+    "scheme": "r2sync",
+    "version": "0.1.54",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -21,6 +22,7 @@
     },
     "android": {
       "package": "com.r2sync.mobile",
+      "versionCode": 54,
       "navigationBar": {
         "backgroundColor": "#0B1120",
         "barStyle": "light-content"

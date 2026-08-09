@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  SafeAreaView,
   StatusBar,
   Platform,
   Alert,
@@ -18,6 +17,7 @@ import {
   Dimensions,
   BackHandler,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Image as ExpoImage } from "expo-image";
 import * as NavigationBar from "expo-navigation-bar";
 import { WebView } from "react-native-webview";
@@ -41,6 +41,13 @@ import {
   Edit2,
   LayoutGrid,
   List,
+  Settings,
+  User,
+  Database,
+  Shield,
+  CheckCircle2,
+  AlertCircle,
+  Key,
 } from "lucide-react-native";
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp"];
@@ -55,6 +62,9 @@ import {
   generateShareLink,
   clearConfig,
   getSavedConfig,
+  fetchServerSettings,
+  saveServerR2Settings,
+  updateAccountCredentials,
   FileItem,
 } from "../services/api";
 import {
@@ -67,9 +77,10 @@ import { AppState } from "react-native";
 
 interface DriveScreenProps {
   onLogout: () => void;
+  onOpenSettings: () => void;
 }
 
-export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
+export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettings }) => {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentFolder, setCurrentFolder] = useState<string>("");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -94,6 +105,98 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
   const [isPdfPreviewVisible, setIsPdfPreviewVisible] = useState(false);
   const [previewPdfHtml, setPreviewPdfHtml] = useState<string | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
+
+  // Settings Modal State (Konto & Cloudflare R2 Credentials)
+  const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
+  const [loadingSettings, setLoadingSettings] = useState(false);
+  const [isR2Connected, setIsR2Connected] = useState(false);
+  const [formAccountId, setFormAccountId] = useState("");
+  const [formAccessKeyId, setFormAccessKeyId] = useState("");
+  const [formSecretAccessKey, setFormSecretAccessKey] = useState("");
+  const [formBucketName, setFormBucketName] = useState("");
+  const [formPublicDomainUrl, setFormPublicDomainUrl] = useState("");
+  const [savingR2Settings, setSavingR2Settings] = useState(false);
+  const [r2SettingsStatus, setR2SettingsStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  const [currentUsername, setCurrentUsername] = useState("admin");
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [accountStatus, setAccountStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  const loadSettingsData = async () => {
+    setLoadingSettings(true);
+    setR2SettingsStatus(null);
+    setAccountStatus(null);
+    try {
+      const cfg = await getSavedConfig();
+      if (cfg?.username) setCurrentUsername(cfg.username);
+      const data = await fetchServerSettings();
+      if (data.config) {
+        setIsR2Connected(data.isConnected);
+        setFormAccountId(data.config.accountId || "");
+        setFormAccessKeyId(data.config.accessKeyId || "");
+        setFormBucketName(data.config.bucketName || "");
+        setFormPublicDomainUrl(data.config.publicDomainUrl || "");
+      }
+    } catch (err: any) {
+      console.warn("Failed to fetch settings:", err);
+    } finally {
+      setLoadingSettings(false);
+    }
+  };
+
+  const handleSaveR2Settings = async () => {
+    setSavingR2Settings(true);
+    setR2SettingsStatus(null);
+    try {
+      const success = await saveServerR2Settings({
+        accountId: formAccountId,
+        accessKeyId: formAccessKeyId,
+        secretAccessKey: formSecretAccessKey,
+        bucketName: formBucketName,
+        publicDomainUrl: formPublicDomainUrl,
+      });
+      if (success) {
+        setR2SettingsStatus({ type: "success", message: "Cloudflare R2 Einstellungen gespeichert!" });
+        setFormSecretAccessKey("");
+        await loadSettingsData();
+        await loadData();
+      } else {
+        setR2SettingsStatus({ type: "error", message: "Fehler beim Speichern der R2 Einstellungen" });
+      }
+    } catch (err: any) {
+      setR2SettingsStatus({ type: "error", message: err.message || "Verbindungsfehler" });
+    } finally {
+      setSavingR2Settings(false);
+    }
+  };
+
+  const handleSaveAccount = async () => {
+    setAccountStatus(null);
+    if (newPassword && newPassword !== confirmPassword) {
+      setAccountStatus({ type: "error", message: "Passwörter stimmen nicht überein!" });
+      return;
+    }
+    setSavingAccount(true);
+    try {
+      const res = await updateAccountCredentials(currentUsername, newUsername.trim() || undefined, newPassword.trim() || undefined);
+      if (res.success) {
+        setAccountStatus({ type: "success", message: "Zugangsdaten erfolgreich aktualisiert!" });
+        if (res.updatedUsername) setCurrentUsername(res.updatedUsername);
+        setNewUsername("");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        setAccountStatus({ type: "error", message: res.error || "Aktualisierung fehlgeschlagen" });
+      }
+    } catch (err: any) {
+      setAccountStatus({ type: "error", message: err.message || "Fehler beim Speichern" });
+    } finally {
+      setSavingAccount(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -639,14 +742,10 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
     );
   };
 
-  const statusBarHeight = Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0;
-
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B1120" translucent />
-
+    <View style={styles.container}>
       {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: statusBarHeight + 12 }]}>
+      <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={styles.logoRow}>
             <Cloud size={24} color="#F38020" strokeWidth={2.5} />
@@ -658,17 +757,6 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
         </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.syncBtn}
-            activeOpacity={0.8}
-            onPress={async () => {
-              await runAutoPhotoSync((status) => setSyncStatus(status));
-              loadData();
-            }}
-          >
-            <Camera size={15} color="#FFFFFF" strokeWidth={2.2} style={{ marginRight: 6 }} />
-            <Text style={styles.syncBtnText}>Fotos sichern</Text>
-          </TouchableOpacity>
 
           {/* Gallery / List toggle */}
           <TouchableOpacity
@@ -689,21 +777,19 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
             )}
           </TouchableOpacity>
 
+          {/* Settings Button */}
           <TouchableOpacity
-            style={styles.logoutBtn}
+            style={styles.viewToggleBtn}
             activeOpacity={0.8}
-            onPress={async () => {
-              await clearConfig();
-              onLogout();
-            }}
+            onPress={onOpenSettings}
           >
-            <LogOut size={16} color="#94A3B8" strokeWidth={2} />
+            <Settings size={18} color="#94A3B8" strokeWidth={2} />
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Auto Photo Sync Progress Bar */}
-      {syncStatus && (
+      {!!(syncStatus && syncStatus.statusText) && (
         <View style={styles.syncBar}>
           <RefreshCw size={14} color="#F38020" strokeWidth={2.2} style={{ marginRight: 8 }} />
           <Text style={styles.syncBarText} numberOfLines={1}>
@@ -788,9 +874,9 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           animationType="fade"
           onRequestClose={() => setIsImagePreviewVisible(false)}
         >
-          <SafeAreaView style={styles.viewerContainer}>
+          <SafeAreaView style={styles.viewerContainer} edges={["top", "bottom"]}>
             {/* Header */}
-            <View style={[styles.viewerHeader, { paddingTop: statusBarHeight + 12 }]}>
+            <View style={styles.viewerHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.viewerTitle} numberOfLines={1}>
                   {selectedFile?.filename}
@@ -883,9 +969,9 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           animationType="fade"
           onRequestClose={() => setIsPdfPreviewVisible(false)}
         >
-          <SafeAreaView style={styles.viewerContainer}>
+          <SafeAreaView style={styles.viewerContainer} edges={["top", "bottom"]}>
             {/* Header */}
-            <View style={[styles.viewerHeader, { paddingTop: statusBarHeight + 12 }]}>
+            <View style={styles.viewerHeader}>
               <Text style={styles.viewerTitle} numberOfLines={1}>
                 📄 {selectedFile.filename}
               </Text>
@@ -1191,7 +1277,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout }) => {
           </TouchableOpacity>
         </Modal>
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -1459,17 +1545,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 14,
     backgroundColor: "#0F172A",
     borderBottomWidth: 1,
     borderBottomColor: "#1E293B",
+    zIndex: 10,
   },
   viewerTitle: {
     color: "#F8FAFC",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
-    marginRight: 8,
+    flex: 1,
+    marginRight: 12,
   },
   viewerSubtitle: {
     color: "#64748B",
@@ -1478,6 +1567,8 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     padding: 6,
+    borderRadius: 8,
+    backgroundColor: "#1E293B",
   },
   viewerBody: {
     flex: 1,
