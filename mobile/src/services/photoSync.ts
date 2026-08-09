@@ -104,7 +104,7 @@ export function subscribeToMediaChanges(onChange: () => void): { remove: () => v
 // EXPO TASK MANAGER: Background Sync Registration
 // ----------------------------------------------------
 TaskManager.defineTask(BACKGROUND_PHOTO_SYNC_TASK, async () => {
-  console.log("[PhotoSync TaskManager] Running background photo sync task...");
+  console.log("[PhotoSync TaskManager] Executing lightweight background photo check...");
   try {
     const count = await runAutoPhotoSync();
     return count > 0 ? BackgroundFetch.BackgroundFetchResult.NewData : BackgroundFetch.BackgroundFetchResult.NoData;
@@ -213,14 +213,16 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       console.warn("[PhotoSync] Could not fetch remote file list for reconciliation:", remoteErr);
     }
 
-    // 2. Fetch photo assets from Camera Roll (sorted newest first with pagination)
+    // 2. Fetch photo assets from Camera Roll (newest photos first)
     let allFetchedAssets: any[] = [];
     let hasNextPage = true;
     let afterCursor: string | undefined = undefined;
 
-    while (hasNextPage && allFetchedAssets.length < 5000) {
+    // In background fetch mode, fetch newest 50 photos to minimize RAM footprint
+    const fetchLimit = 50;
+    while (hasNextPage && allFetchedAssets.length < fetchLimit) {
       const pageResult = await getAssetsAsync({
-        first: 100,
+        first: fetchLimit,
         after: afterCursor,
         sortBy: [SortBy.creationTime],
         mediaType: [MediaType.photo],
@@ -230,8 +232,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         allFetchedAssets.push(...pageResult.assets);
       }
 
-      hasNextPage = pageResult.hasNextPage;
-      afterCursor = pageResult.endCursor;
+      hasNextPage = false; // Background check only needs newest batch
     }
 
     // 3. Smart Remote Reconciliation & Watermark Filter:
