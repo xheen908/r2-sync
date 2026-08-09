@@ -184,13 +184,20 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
     // 1. Fetch remote files list from VPS to build an R2 existence index
     let remotePathsSet = new Set<string>();
+    let remoteFilenamesSet = new Set<string>();
     try {
       const remoteFiles = await fetchFilesList();
       remoteFiles.forEach((file) => {
         if (file && file.path) {
-          remotePathsSet.add(file.path.toLowerCase());
+          const lowerPath = file.path.toLowerCase();
+          remotePathsSet.add(lowerPath);
+          const fname = lowerPath.split("/").pop();
+          if (fname) {
+            remoteFilenamesSet.add(fname);
+          }
         }
       });
+      console.log(`[PhotoSync] Loaded ${remotePathsSet.size} remote file(s) from R2 bucket.`);
     } catch (remoteErr) {
       console.warn("[PhotoSync] Could not fetch remote file list for reconciliation:", remoteErr);
     }
@@ -217,7 +224,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     }
 
     // 3. Smart Remote Reconciliation:
-    // Check if assets already exist in R2 Bucket under Kamera-Uploads/YYYY-MM/filename.jpg.
+    // Check if assets already exist in R2 Bucket by path or by unique filename (e.g., 20260809_231654.jpg).
     // If found on remote R2, mark as synced in tombstone DB so it's never re-uploaded.
     let reconciledCount = 0;
     if (remotePathsSet.size > 0 && allFetchedAssets.length > 0) {
@@ -227,10 +234,10 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         const assetTime = asset.creationTime || asset.modificationTime || Date.now();
         const date = new Date(assetTime);
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const filename = asset.filename || `photo_${asset.id}.jpg`;
-        const expectedPath = `kamera-uploads/${monthStr}/${filename}`.toLowerCase();
+        const filename = (asset.filename || `photo_${asset.id}.jpg`).toLowerCase();
+        const expectedPath = `kamera-uploads/${monthStr}/${filename}`;
 
-        if (remotePathsSet.has(expectedPath)) {
+        if (remotePathsSet.has(expectedPath) || remoteFilenamesSet.has(filename)) {
           syncedIdsSet.add(asset.id);
           reconciledCount++;
         }
