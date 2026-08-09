@@ -180,6 +180,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     }
 
     const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
+    const isFirstInitialization = rawSyncedIds === null;
     const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
 
     // Fetch photo assets from Camera Roll (sorted newest first with pagination)
@@ -201,6 +202,20 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
       hasNextPage = pageResult.hasNextPage;
       afterCursor = pageResult.endCursor;
+    }
+
+    // FIRST INITIALIZATION: Baseline setup
+    // On first launch/installation, mark all current gallery assets as synced baseline so old photos aren't uploaded.
+    if (isFirstInitialization && allFetchedAssets.length > 0) {
+      console.log(`[PhotoSync] First initialization detected. Marking ${allFetchedAssets.length} existing photo(s) as baseline...`);
+      allFetchedAssets.forEach((asset) => {
+        if (asset && asset.id) {
+          syncedIdsSet.add(asset.id);
+        }
+      });
+      await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
+      onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Fotogalerie initialisiert (nur neue Fotos werden gesichert)" });
+      return 0;
     }
 
     const newAssets = allFetchedAssets.filter((asset) => asset && asset.id && !syncedIdsSet.has(asset.id));
