@@ -32,7 +32,10 @@ import {
   clearConfig,
   getWifiOnlySyncSetting,
   setWifiOnlySyncSetting,
+  getSyncIntervalSetting,
+  setSyncIntervalSetting,
 } from "../services/api";
+import { registerBackgroundPhotoSyncTask } from "../services/photoSync";
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -66,6 +69,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
 
   // Sync Preferences state
   const [wifiOnlySync, setWifiOnlySync] = useState(false);
+  const [syncInterval, setSyncInterval] = useState(1);
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -77,6 +81,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
 
       const wifiPref = await getWifiOnlySyncSetting();
       setWifiOnlySync(wifiPref);
+
+      const intervalPref = await getSyncIntervalSetting();
+      setSyncInterval(intervalPref);
 
       const data = await fetchServerSettings();
       if (data.config) {
@@ -97,6 +104,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
   const handleToggleWifiOnly = async (val: boolean) => {
     setWifiOnlySync(val);
     await setWifiOnlySyncSetting(val);
+  };
+
+  const handleSelectInterval = async (minutes: number) => {
+    setSyncInterval(minutes);
+    await setSyncIntervalSetting(minutes);
+    await registerBackgroundPhotoSyncTask();
   };
 
   useEffect(() => {
@@ -373,7 +386,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
                   </View>
                 </View>
 
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 12, paddingBottom: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 12, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: "#1E293B" }}>
                   <View style={{ flex: 1, paddingRight: 16 }}>
                     <Text style={{ color: "#F8FAFC", fontSize: 15, fontWeight: "600" }}>Nur über WLAN sichern</Text>
                     <Text style={{ color: "#64748B", fontSize: 13, marginTop: 4, lineHeight: 18 }}>
@@ -386,6 +399,49 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, onLogout
                     trackColor={{ false: "#334155", true: "#F38020" }}
                     thumbColor={wifiOnlySync ? "#FFFFFF" : "#94A3B8"}
                   />
+                </View>
+
+                {/* Interval Selector */}
+                <View style={{ paddingTop: 16 }}>
+                  <Text style={{ color: "#F8FAFC", fontSize: 15, fontWeight: "600", marginBottom: 4 }}>
+                    Hintergrund-Prüfintervall
+                  </Text>
+                  <Text style={{ color: "#64748B", fontSize: 13, marginBottom: 14, lineHeight: 18 }}>
+                    Wie oft die App im Hintergrund prüft, ob neue Fotos geknipst wurden:
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {[
+                      { label: "1 Min", value: 1 },
+                      { label: "5 Min", value: 5 },
+                      { label: "15 Min", value: 15 },
+                      { label: "60 Min", value: 60 },
+                    ].map((opt) => (
+                      <TouchableOpacity
+                        key={opt.value}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 12,
+                          borderRadius: 12,
+                          alignItems: "center",
+                          backgroundColor: syncInterval === opt.value ? "#F38020" : "#0B1120",
+                          borderWidth: 1,
+                          borderColor: syncInterval === opt.value ? "#F38020" : "#334155",
+                        }}
+                        activeOpacity={0.8}
+                        onPress={() => handleSelectInterval(opt.value)}
+                      >
+                        <Text
+                          style={{
+                            color: syncInterval === opt.value ? "#FFFFFF" : "#94A3B8",
+                            fontWeight: "700",
+                            fontSize: 14,
+                          }}
+                        >
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </View>
               </View>
             )}

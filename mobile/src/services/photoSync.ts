@@ -12,7 +12,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Network from "expo-network";
-import { uploadFileToVPS, STORAGE_KEYS, getWifiOnlySyncSetting } from "./api";
+import { uploadFileToVPS, STORAGE_KEYS, getWifiOnlySyncSetting, getSyncIntervalSetting } from "./api";
 
 export interface SyncProgressStatus {
   isSyncing: boolean;
@@ -118,15 +118,22 @@ TaskManager.defineTask(BACKGROUND_PHOTO_SYNC_TASK, async () => {
 
 export async function registerBackgroundPhotoSyncTask() {
   try {
-    const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_PHOTO_SYNC_TASK);
-    if (!isRegistered) {
-      await BackgroundFetch.registerTaskAsync(BACKGROUND_PHOTO_SYNC_TASK, {
-        minimumInterval: 15 * 60, // Check every 15 minutes in background
-        stopOnTerminate: false,
-        startOnBoot: true,
-      });
-      console.log("[PhotoSync] Registered background photo sync task successfully.");
+    const minutes = await getSyncIntervalSetting();
+    const intervalSeconds = minutes * 60;
+
+    if (Platform.OS === "android") {
+      await BackgroundFetch.setMinimumIntervalAsync(intervalSeconds);
     }
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_PHOTO_SYNC_TASK);
+    if (isRegistered) {
+      await BackgroundFetch.unregisterTaskAsync(BACKGROUND_PHOTO_SYNC_TASK).catch(() => {});
+    }
+    await BackgroundFetch.registerTaskAsync(BACKGROUND_PHOTO_SYNC_TASK, {
+      minimumInterval: intervalSeconds,
+      stopOnTerminate: false,
+      startOnBoot: true,
+    });
+    console.log(`[PhotoSync] Registered background photo sync task with ${minutes}m interval.`);
   } catch (err) {
     console.warn("[PhotoSync] Failed to register background task:", err);
   }

@@ -25,6 +25,7 @@ export const STORAGE_KEYS = {
   LAST_SYNC_TIME: "r2sync_last_photo_sync_time",
   SYNCED_ASSET_IDS: "r2sync_synced_asset_ids",
   WIFI_ONLY_SYNC: "r2sync_wifi_only_sync",
+  SYNC_INTERVAL: "r2sync_sync_interval_minutes",
 };
 
 export async function getWifiOnlySyncSetting(): Promise<boolean> {
@@ -38,6 +39,19 @@ export async function getWifiOnlySyncSetting(): Promise<boolean> {
 
 export async function setWifiOnlySyncSetting(enabled: boolean): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEYS.WIFI_ONLY_SYNC, enabled ? "true" : "false");
+}
+
+export async function getSyncIntervalSetting(): Promise<number> {
+  try {
+    const val = await AsyncStorage.getItem(STORAGE_KEYS.SYNC_INTERVAL);
+    return val ? parseInt(val, 10) : 1; // Default to 1 minute
+  } catch {
+    return 1;
+  }
+}
+
+export async function setSyncIntervalSetting(minutes: number): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEYS.SYNC_INTERVAL, minutes.toString());
 }
 
 export async function getSavedConfig(): Promise<ApiConfig | null> {
