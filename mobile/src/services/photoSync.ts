@@ -182,6 +182,16 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
     const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
 
+    // Watermark cutoff: If no baseline timestamp exists, set it to Date.now() on first launch
+    let rawWatermark = await AsyncStorage.getItem("r2sync_photo_watermark_timestamp");
+    if (!rawWatermark) {
+      // Set watermark to current time so any existing older photos on the phone are ignored
+      rawWatermark = Date.now().toString();
+      await AsyncStorage.setItem("r2sync_photo_watermark_timestamp", rawWatermark);
+      console.log(`[PhotoSync] Initialized watermark timestamp to ${new Date(Number(rawWatermark)).toISOString()}`);
+    }
+    const watermarkTime = Number(rawWatermark);
+
     // 1. Fetch remote files list from VPS to build an R2 existence index
     let remotePathsSet = new Set<string>();
     let remoteFilenamesSet = new Set<string>();
@@ -223,40 +233,38 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       afterCursor = pageResult.endCursor;
     }
 
-    // 3. Smart Remote Reconciliation:
-    // Check if assets already exist in R2 Bucket by path or by unique filename (e.g., 20260809_231654.jpg).
-    // If found on remote R2, mark as synced in tombstone DB so it's never re-uploaded.
+    // 3. Smart Remote Reconciliation & Watermark Filter:
+    // Mark assets older than watermark or already present in R2 as synced so they're NEVER uploaded
     let reconciledCount = 0;
-    if (remotePathsSet.size > 0 && allFetchedAssets.length > 0) {
-      allFetchedAssets.forEach((asset) => {
-        if (!asset || !asset.id || syncedIdsSet.has(asset.id)) return;
+    if (allFetchedAssets.length > 0) {
+      for (const asset of allFetchedAssets) {
+        if (!asset || !asset.id || syncedIdsSet.has(asset.id)) continue;
 
         const assetTime = asset.creationTime || asset.modificationTime || Date.now();
         const date = new Date(assetTime);
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const assetInfo = await getAssetInfoAsync(asset).catch(() => null);
-        const resolvedUri = assetInfo?.localUri || assetInfo?.uri || asset.uri || "";
-        
+
         let filename = (asset.filename || "").toLowerCase();
         if (!filename || filename.startsWith("photo_") || !filename.includes(".")) {
-          const uriPart = resolvedUri.split("/").pop();
+          const uriPart = (asset.uri || "").split("/").pop();
           if (uriPart && uriPart.includes(".")) {
             filename = uriPart.toLowerCase();
           }
         }
         if (!filename) filename = `photo_${asset.id}.jpg`;
 
-        const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
         const expectedPath = `kamera-uploads/${monthStr}/${filename}`;
 
-        if (remotePathsSet.has(expectedPath) || remoteFilenamesSet.has(filename)) {
+        // Rule A: If file exists in R2 cloud -> Mark synced
+        // Rule B: If photo was created BEFORE the watermark timestamp (old photo before app setup) -> Mark synced & ignore
+        if (remotePathsSet.has(expectedPath) || remoteFilenamesSet.has(filename) || assetTime < watermarkTime) {
           syncedIdsSet.add(asset.id);
           reconciledCount++;
         }
-      });
+      }
 
       if (reconciledCount > 0) {
-        console.log(`[PhotoSync] Smart Reconciliation: Matched ${reconciledCount} asset(s) with existing R2 cloud files.`);
+        console.log(`[PhotoSync] Filtered/Matched ${reconciledCount} asset(s) (existing in R2 or older than setup watermark).`);
         await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
       }
     }
