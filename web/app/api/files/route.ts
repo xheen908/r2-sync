@@ -20,11 +20,11 @@ export async function GET(request: Request) {
       let continuationToken: string | undefined = undefined;
 
       while (isTruncated) {
-        const command = new ListObjectsV2Command({
+        const listCmd: ListObjectsV2Command = new ListObjectsV2Command({
           Bucket: bucketName,
           ContinuationToken: continuationToken,
         });
-        const res = await s3Client.send(command);
+        const res = await s3Client.send(listCmd);
 
         if (res.Contents) {
           for (const item of res.Contents) {
@@ -87,11 +87,11 @@ export async function GET(request: Request) {
         let continuationToken: string | undefined = undefined;
 
         while (isTruncated) {
-          const command = new ListObjectsV2Command({
+          const listCmd: ListObjectsV2Command = new ListObjectsV2Command({
             Bucket: bucketName,
             ContinuationToken: continuationToken,
           });
-          const res = await s3Client.send(command);
+          const res = await s3Client.send(listCmd);
 
           if (res.Contents) {
             for (const item of res.Contents) {
