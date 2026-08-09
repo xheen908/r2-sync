@@ -218,11 +218,9 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     let hasNextPage = true;
     let afterCursor: string | undefined = undefined;
 
-    // In background fetch mode, fetch newest 50 media assets to minimize RAM footprint
-    const fetchLimit = 50;
-    while (hasNextPage && allFetchedAssets.length < fetchLimit) {
+    while (hasNextPage && allFetchedAssets.length < 5000) {
       const pageResult = await getAssetsAsync({
-        first: fetchLimit,
+        first: 100,
         after: afterCursor,
         sortBy: [SortBy.creationTime],
         mediaType: [MediaType.photo, MediaType.video],
@@ -232,7 +230,8 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         allFetchedAssets.push(...pageResult.assets);
       }
 
-      hasNextPage = false; // Background check only needs newest batch
+      hasNextPage = pageResult.hasNextPage;
+      afterCursor = pageResult.endCursor;
     }
 
     // 3. Smart Remote Reconciliation & Watermark Filter:
@@ -259,9 +258,12 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
         const expectedPath = `kamera-uploads/${monthStr}/${filename}`;
 
+        const isVideo = asset.mediaType === MediaType.video || asset.mediaType === "video" || filename.endsWith(".mp4") || filename.endsWith(".mov");
+
         // Rule A: If file exists in R2 cloud -> Mark synced
-        // Rule B: If photo was created BEFORE the watermark timestamp (old photo before app setup) -> Mark synced & ignore
-        if (remotePathsSet.has(expectedPath) || remoteFilenamesSet.has(filename) || assetTime < watermarkTime) {
+        // Rule B: If item is a PHOTO and was created BEFORE the watermark timestamp (old photo before app setup) -> Mark synced & ignore
+        // NOTE: VIDEOS BYPASS Rule B so ALL existing videos on the phone get backed up!
+        if (remotePathsSet.has(expectedPath) || remoteFilenamesSet.has(filename) || (!isVideo && assetTime < watermarkTime)) {
           syncedIdsSet.add(asset.id);
           reconciledCount++;
         }
