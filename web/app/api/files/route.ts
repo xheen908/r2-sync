@@ -16,19 +16,30 @@ export async function GET(request: Request) {
     let r2FilesMap = new Map<string, { size: number; etag: string; updatedAt: number }>();
     try {
       const { s3Client, bucketName } = await getS3Client();
-      const command = new ListObjectsV2Command({ Bucket: bucketName });
-      const res = await s3Client.send(command);
+      let isTruncated = true;
+      let continuationToken: string | undefined = undefined;
 
-      if (res.Contents) {
-        for (const item of res.Contents) {
-          if (item.Key && !item.Key.startsWith(".shares/")) {
-            r2FilesMap.set(item.Key, {
-              size: item.Size || 0,
-              etag: item.ETag ? item.ETag.replace(/"/g, "") : "",
-              updatedAt: item.LastModified ? new Date(item.LastModified).getTime() : Date.now(),
-            });
+      while (isTruncated) {
+        const command = new ListObjectsV2Command({
+          Bucket: bucketName,
+          ContinuationToken: continuationToken,
+        });
+        const res = await s3Client.send(command);
+
+        if (res.Contents) {
+          for (const item of res.Contents) {
+            if (item.Key && !item.Key.startsWith(".shares/")) {
+              r2FilesMap.set(item.Key, {
+                size: item.Size || 0,
+                etag: item.ETag ? item.ETag.replace(/"/g, "") : "",
+                updatedAt: item.LastModified ? new Date(item.LastModified).getTime() : Date.now(),
+              });
+            }
           }
         }
+
+        isTruncated = !!res.IsTruncated;
+        continuationToken = res.NextContinuationToken;
       }
 
       const { getDb } = await import("@/lib/db");
@@ -72,26 +83,37 @@ export async function GET(request: Request) {
     if (files.length === 0 && !forceSync) {
       try {
         const { s3Client, bucketName } = await getS3Client();
-        const command = new ListObjectsV2Command({ Bucket: bucketName });
-        const res = await s3Client.send(command);
+        let isTruncated = true;
+        let continuationToken: string | undefined = undefined;
 
-        if (res.Contents) {
-          for (const item of res.Contents) {
-            if (item.Key && !item.Key.startsWith(".shares/")) {
-              const fileId = `f_${Math.random().toString(36).substring(2)}`;
-              const filename = item.Key.split("/").pop() || item.Key;
-              const etag = item.ETag ? item.ETag.replace(/"/g, "") : "";
-              const size = item.Size || 0;
-              const updatedAt = item.LastModified ? new Date(item.LastModified).getTime() : Date.now();
+        while (isTruncated) {
+          const command = new ListObjectsV2Command({
+            Bucket: bucketName,
+            ContinuationToken: continuationToken,
+          });
+          const res = await s3Client.send(command);
 
-              await db.run(
-                "INSERT OR REPLACE INTO files (id, path, filename, size, etag, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                [fileId, item.Key, filename, size, etag, updatedAt]
-              );
+          if (res.Contents) {
+            for (const item of res.Contents) {
+              if (item.Key && !item.Key.startsWith(".shares/")) {
+                const fileId = `f_${Math.random().toString(36).substring(2)}`;
+                const filename = item.Key.split("/").pop() || item.Key;
+                const etag = item.ETag ? item.ETag.replace(/"/g, "") : "";
+                const size = item.Size || 0;
+                const updatedAt = item.LastModified ? new Date(item.LastModified).getTime() : Date.now();
+
+                await db.run(
+                  "INSERT OR REPLACE INTO files (id, path, filename, size, etag, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                  [fileId, item.Key, filename, size, etag, updatedAt]
+                );
+              }
             }
           }
-          files = await db.all("SELECT * FROM files ORDER BY updated_at DESC");
+          isTruncated = !!res.IsTruncated;
+          continuationToken = res.NextContinuationToken;
         }
+
+        files = await db.all("SELECT * FROM files ORDER BY updated_at DESC");
       } catch (autoSyncErr) {
         console.warn("Files API: Initial auto-sync from R2 failed:", autoSyncErr);
       }
