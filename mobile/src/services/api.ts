@@ -162,7 +162,7 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
   for (const endpoint of [httpsUrl, httpUrl]) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout for background uploads
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout for large video uploads
 
       const cleanUri = fileUri.startsWith("file://") || fileUri.startsWith("content://") ? fileUri : `file://${fileUri}`;
       const formData = new FormData();
