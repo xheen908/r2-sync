@@ -186,7 +186,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     let remotePathsSet = new Set<string>();
     let remoteFilenamesSet = new Set<string>();
     try {
-      const remoteFiles = await fetchFilesList();
+      const remoteFiles = await fetchFilesList(true);
       remoteFiles.forEach((file) => {
         if (file && file.path) {
           const lowerPath = file.path.toLowerCase();
@@ -234,7 +234,19 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         const assetTime = asset.creationTime || asset.modificationTime || Date.now();
         const date = new Date(assetTime);
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const filename = (asset.filename || `photo_${asset.id}.jpg`).toLowerCase();
+        const assetInfo = await getAssetInfoAsync(asset).catch(() => null);
+        const resolvedUri = assetInfo?.localUri || assetInfo?.uri || asset.uri || "";
+        
+        let filename = (asset.filename || "").toLowerCase();
+        if (!filename || filename.startsWith("photo_") || !filename.includes(".")) {
+          const uriPart = resolvedUri.split("/").pop();
+          if (uriPart && uriPart.includes(".")) {
+            filename = uriPart.toLowerCase();
+          }
+        }
+        if (!filename) filename = `photo_${asset.id}.jpg`;
+
+        const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
         const expectedPath = `kamera-uploads/${monthStr}/${filename}`;
 
         if (remotePathsSet.has(expectedPath) || remoteFilenamesSet.has(filename)) {

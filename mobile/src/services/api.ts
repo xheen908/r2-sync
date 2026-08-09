@@ -111,11 +111,11 @@ export async function loginAndFetchConfig(serverUrl: string, username: string, p
   return apiConfig;
 }
 
-export async function fetchFilesList(): Promise<FileItem[]> {
+export async function fetchFilesList(forceSync = false): Promise<FileItem[]> {
   const cfg = await getSavedConfig();
   if (!cfg) throw new Error("Nicht angemeldet");
 
-  const url = `${cfg.serverUrl}/api/files`;
+  const url = `${cfg.serverUrl}/api/files${forceSync ? "?forceSync=true" : ""}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Fehler beim Laden der Dateiliste (${response.status})`);
