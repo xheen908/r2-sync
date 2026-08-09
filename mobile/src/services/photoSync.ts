@@ -283,14 +283,14 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       return 0;
     }
 
-    const startMsg = `${newAssets.length} neue(s) Foto(s) erkannt. Sichere in Cloud...`;
+    const startMsg = `${newAssets.length} neue(s) Medien-Datei(en) (Fotos & Videos) erkannt. Sichere in Cloud...`;
     onProgress?.({
       isSyncing: true,
       totalNew: newAssets.length,
       uploadedCount: 0,
       statusText: startMsg,
     });
-    await showProgressNotification("☁️ R2Sync Foto-Backup", startMsg);
+    await showProgressNotification("☁️ R2Sync Medien-Backup", startMsg);
 
     let successCount = 0;
 
@@ -347,7 +347,9 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         console.warn("[PhotoSync] Error uploading photo asset:", asset.id, err);
       }
 
-      const progressText = `Fotoseicherung: ${i + 1} / ${newAssets.length} hochgeladen`;
+      const isVid = (asset.filename || "").toLowerCase().endsWith(".mp4") || (asset.filename || "").toLowerCase().endsWith(".mov");
+      const mediaLabel = isVid ? "Video" : "Foto";
+      const progressText = `Medien-Sicherung: ${i + 1} / ${newAssets.length} (${mediaLabel} ${i + 1})`;
       onProgress?.({
         isSyncing: true,
         totalNew: newAssets.length,
@@ -355,19 +357,19 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         statusText: progressText,
       });
 
-      // Update native Android status notification for EVERY uploaded photo
-      await showProgressNotification("☁️ R2Sync Foto-Backup", progressText);
+      // Update native Android status notification for EVERY uploaded file
+      await showProgressNotification("☁️ R2Sync Medien-Backup", progressText);
     }
 
     if (successCount > 0) {
-      const finishText = `Sync abgeschlossen: ${successCount} Foto(s) gesichert`;
+      const finishText = `Sync abgeschlossen: ${successCount} Datei(en) gesichert`;
       onProgress?.({
         isSyncing: false,
         totalNew: newAssets.length,
         uploadedCount: successCount,
         statusText: finishText,
       });
-      await showProgressNotification("✅ R2Sync Foto-Backup", finishText, true);
+      await showProgressNotification("✅ R2Sync Medien-Backup", finishText, true);
 
       setTimeout(() => {
         onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "" });
