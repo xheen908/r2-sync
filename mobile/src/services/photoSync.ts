@@ -182,11 +182,12 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
     const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
 
-    // Watermark cutoff: If no baseline timestamp exists, set it to Date.now() on first launch
+    // Watermark cutoff: Baseline timestamp set to 2 hours before first setup to ensure newly taken photos are included
     let rawWatermark = await AsyncStorage.getItem("r2sync_photo_watermark_timestamp");
     if (!rawWatermark) {
-      // Set watermark to current time so any existing older photos on the phone are ignored
-      rawWatermark = Date.now().toString();
+      // Set watermark to 2 hours ago so any photos taken right before or during setup are uploaded
+      const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+      rawWatermark = twoHoursAgo.toString();
       await AsyncStorage.setItem("r2sync_photo_watermark_timestamp", rawWatermark);
       console.log(`[PhotoSync] Initialized watermark timestamp to ${new Date(Number(rawWatermark)).toISOString()}`);
     }
