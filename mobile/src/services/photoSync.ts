@@ -180,10 +180,22 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     }
 
     const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
-    const isFirstInitialization = rawSyncedIds === null;
     const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
 
-    // Fetch photo assets from Camera Roll (sorted newest first with pagination)
+    // 1. Fetch remote files list from VPS to build an R2 existence index
+    let remotePathsSet = new Set<string>();
+    try {
+      const remoteFiles = await fetchFilesList();
+      remoteFiles.forEach((file) => {
+        if (file && file.path) {
+          remotePathsSet.add(file.path.toLowerCase());
+        }
+      });
+    } catch (remoteErr) {
+      console.warn("[PhotoSync] Could not fetch remote file list for reconciliation:", remoteErr);
+    }
+
+    // 2. Fetch photo assets from Camera Roll (sorted newest first with pagination)
     let allFetchedAssets: any[] = [];
     let hasNextPage = true;
     let afterCursor: string | undefined = undefined;
@@ -204,18 +216,30 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       afterCursor = pageResult.endCursor;
     }
 
-    // FIRST INITIALIZATION: Baseline setup
-    // On first launch/installation, mark all current gallery assets as synced baseline so old photos aren't uploaded.
-    if (isFirstInitialization && allFetchedAssets.length > 0) {
-      console.log(`[PhotoSync] First initialization detected. Marking ${allFetchedAssets.length} existing photo(s) as baseline...`);
+    // 3. Smart Remote Reconciliation:
+    // Check if assets already exist in R2 Bucket under Kamera-Uploads/YYYY-MM/filename.jpg.
+    // If found on remote R2, mark as synced in tombstone DB so it's never re-uploaded.
+    let reconciledCount = 0;
+    if (remotePathsSet.size > 0 && allFetchedAssets.length > 0) {
       allFetchedAssets.forEach((asset) => {
-        if (asset && asset.id) {
+        if (!asset || !asset.id || syncedIdsSet.has(asset.id)) return;
+
+        const assetTime = asset.creationTime || asset.modificationTime || Date.now();
+        const date = new Date(assetTime);
+        const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        const filename = asset.filename || `photo_${asset.id}.jpg`;
+        const expectedPath = `kamera-uploads/${monthStr}/${filename}`.toLowerCase();
+
+        if (remotePathsSet.has(expectedPath)) {
           syncedIdsSet.add(asset.id);
+          reconciledCount++;
         }
       });
-      await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
-      onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Fotogalerie initialisiert (nur neue Fotos werden gesichert)" });
-      return 0;
+
+      if (reconciledCount > 0) {
+        console.log(`[PhotoSync] Smart Reconciliation: Matched ${reconciledCount} asset(s) with existing R2 cloud files.`);
+        await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
+      }
     }
 
     const newAssets = allFetchedAssets.filter((asset) => asset && asset.id && !syncedIdsSet.has(asset.id));
@@ -256,6 +280,14 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
         const filename = asset.filename || `photo_${asset.id}.jpg`;
         const targetPath = `Kamera-Uploads/${monthStr}/${filename}`;
+
+        // Double check against remote R2 before performing upload
+        if (remotePathsSet.has(targetPath.toLowerCase())) {
+          console.log(`[PhotoSync] Target ${targetPath} already exists in R2 cloud. Marking as synced.`);
+          syncedIdsSet.add(asset.id);
+          await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
+          continue;
+        }
 
         console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) to ${targetPath}...`);
         const uploaded = await uploadFileToVPS(uri, targetPath, "image/jpeg");
