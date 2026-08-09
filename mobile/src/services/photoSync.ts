@@ -240,7 +240,9 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       for (const asset of allFetchedAssets) {
         if (!asset || !asset.id || syncedIdsSet.has(asset.id)) continue;
 
-        const assetTime = asset.creationTime || asset.modificationTime || Date.now();
+        let rawAssetTime = asset.creationTime || asset.modificationTime || Date.now();
+        // expo-media-library on Android/iOS can return creationTime in seconds or milliseconds
+        const assetTime = rawAssetTime < 10000000000 ? rawAssetTime * 1000 : rawAssetTime;
         const date = new Date(assetTime);
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
