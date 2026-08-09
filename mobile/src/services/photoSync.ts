@@ -213,19 +213,19 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       console.warn("[PhotoSync] Could not fetch remote file list for reconciliation:", remoteErr);
     }
 
-    // 2. Fetch photo assets from Camera Roll (newest photos first)
+    // 2. Fetch photo & video assets from Camera Roll (newest items first)
     let allFetchedAssets: any[] = [];
     let hasNextPage = true;
     let afterCursor: string | undefined = undefined;
 
-    // In background fetch mode, fetch newest 50 photos to minimize RAM footprint
+    // In background fetch mode, fetch newest 50 media assets to minimize RAM footprint
     const fetchLimit = 50;
     while (hasNextPage && allFetchedAssets.length < fetchLimit) {
       const pageResult = await getAssetsAsync({
         first: fetchLimit,
         after: afterCursor,
         sortBy: [SortBy.creationTime],
-        mediaType: [MediaType.photo],
+        mediaType: [MediaType.photo, MediaType.video],
       });
 
       if (pageResult.assets && pageResult.assets.length > 0) {
@@ -320,8 +320,19 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
           continue;
         }
 
-        console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) to ${targetPath}...`);
-        const uploaded = await uploadFileToVPS(uri, targetPath, "image/jpeg");
+        const ext = filename.split(".").pop()?.toLowerCase() || "";
+        let mimeType = "image/jpeg";
+        if (ext === "mp4") mimeType = "video/mp4";
+        else if (ext === "mov") mimeType = "video/quicktime";
+        else if (ext === "m4v") mimeType = "video/x-m4v";
+        else if (ext === "mkv") mimeType = "video/x-matroska";
+        else if (ext === "webm") mimeType = "video/webm";
+        else if (ext === "png") mimeType = "image/png";
+        else if (ext === "webp") mimeType = "image/webp";
+        else if (ext === "heic") mimeType = "image/heic";
+
+        console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) [${mimeType}] to ${targetPath}...`);
+        const uploaded = await uploadFileToVPS(uri, targetPath, mimeType);
 
         if (uploaded) {
           successCount++;
