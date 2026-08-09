@@ -299,8 +299,12 @@ final class SyncEngineController: ObservableObject, FSEventsWatcherDelegate, @un
         let domain = config.publicDomainURL.isEmpty ? "https://drive.ocpp-labs.com" : config.publicDomainURL
         let cleanDomain = domain.hasSuffix("/") ? String(domain.dropLast()) : domain
         
-        let pathQuery = action == "upload" ? "forceSync=true" : "filePath=\(relativePath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? relativePath)"
-        guard let url = URL(string: "\(cleanDomain)/api/files?\(pathQuery)") else { return }
+        let encodedPath = relativePath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? relativePath
+        let urlString = action == "delete" 
+            ? "\(cleanDomain)/api/files?filePath=\(encodedPath)"
+            : "\(cleanDomain)/api/files?forceSync=true"
+            
+        guard let url = URL(string: urlString) else { return }
         
         var request = URLRequest(url: url)
         request.httpMethod = action == "delete" ? "DELETE" : "GET"
