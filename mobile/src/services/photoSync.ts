@@ -12,7 +12,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Network from "expo-network";
-import { uploadFileToVPS, STORAGE_KEYS, getWifiOnlySyncSetting, getSyncIntervalSetting } from "./api";
+import { uploadFileToVPS, fetchFilesList, STORAGE_KEYS, getWifiOnlySyncSetting, getSyncIntervalSetting } from "./api";
 
 export interface SyncProgressStatus {
   isSyncing: boolean;
