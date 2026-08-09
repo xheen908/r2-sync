@@ -25,8 +25,6 @@ const BACKGROUND_PHOTO_SYNC_TASK = "R2_BACKGROUND_PHOTO_SYNC_TASK";
 const NOTIFICATION_CHANNEL_ID = "r2sync_photo_backup";
 const NOTIFICATION_ID = "r2sync_photo_progress";
 
-let isSyncInProgress = false;
-
 // Configure Notification Handler for Foreground & Background
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -139,13 +137,26 @@ export async function registerBackgroundPhotoSyncTask() {
   }
 }
 
+let isSyncInProgress = false;
+let isSyncQueued = false;
+let lastSyncStartTime = 0;
+
 export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus) => void): Promise<number> {
+  const now = Date.now();
+  // Watchdog: If sync has been stuck for > 3 minutes (180,000ms), force-reset the lock
+  if (isSyncInProgress && now - lastSyncStartTime > 180000) {
+    console.warn("[PhotoSync] Sync was stuck for over 3 minutes. Resetting lock...");
+    isSyncInProgress = false;
+  }
+
   if (isSyncInProgress) {
-    console.log("[PhotoSync] Sync already in progress, skipping concurrent run.");
+    console.log("[PhotoSync] Sync already in progress, queuing next run...");
+    isSyncQueued = true;
     return 0;
   }
 
   isSyncInProgress = true;
+  lastSyncStartTime = Date.now();
   try {
     // Check Wi-Fi restriction setting
     const wifiOnly = await getWifiOnlySyncSetting();
@@ -171,7 +182,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
     const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
 
-    // Fetch all photo assets from Camera Roll (sorted newest first with pagination)
+    // Fetch photo assets from Camera Roll (sorted newest first with pagination)
     let allFetchedAssets: any[] = [];
     let hasNextPage = true;
     let afterCursor: string | undefined = undefined;
@@ -217,8 +228,11 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
       try {
         const assetInfo = await getAssetInfoAsync(asset).catch(() => null);
-        const uri = assetInfo?.localUri || asset.uri;
-        if (!uri) continue;
+        const uri = assetInfo?.localUri || assetInfo?.uri || asset.uri;
+        if (!uri) {
+          console.warn("[PhotoSync] Could not resolve URI for asset:", asset.id);
+          continue;
+        }
 
         const assetTime = asset.creationTime || asset.modificationTime || Date.now();
 
@@ -231,15 +245,15 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) to ${targetPath}...`);
         const uploaded = await uploadFileToVPS(uri, targetPath, "image/jpeg");
 
-        // Mark item as processed in AsyncStorage to prevent endless retries
-        syncedIdsSet.add(asset.id);
-        await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
-
         if (uploaded) {
           successCount++;
+          syncedIdsSet.add(asset.id);
+          await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
+        } else {
+          console.warn("[PhotoSync] Failed to upload asset, will retry on next sync:", asset.id);
         }
       } catch (err) {
-        console.warn("Error uploading photo asset:", asset.id, err);
+        console.warn("[PhotoSync] Error uploading photo asset:", asset.id, err);
       }
 
       const progressText = `Fotoseicherung: ${i + 1} / ${newAssets.length} hochgeladen`;
@@ -254,19 +268,20 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       await showProgressNotification("☁️ R2Sync Foto-Backup", progressText);
     }
 
-    const finishText = `Sync abgeschlossen: ${successCount} Foto(s) gesichert`;
-    onProgress?.({
-      isSyncing: false,
-      totalNew: newAssets.length,
-      uploadedCount: successCount,
-      statusText: finishText,
-    });
-    await showProgressNotification("✅ R2Sync Foto-Backup", finishText, true);
+    if (successCount > 0) {
+      const finishText = `Sync abgeschlossen: ${successCount} Foto(s) gesichert`;
+      onProgress?.({
+        isSyncing: false,
+        totalNew: newAssets.length,
+        uploadedCount: successCount,
+        statusText: finishText,
+      });
+      await showProgressNotification("✅ R2Sync Foto-Backup", finishText, true);
 
-    // Keep status visible for 8 seconds after finish
-    setTimeout(() => {
-      onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "" });
-    }, 8000);
+      setTimeout(() => {
+        onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "" });
+      }, 8000);
+    }
 
     return successCount;
   } catch (err: any) {
@@ -275,5 +290,12 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     return 0;
   } finally {
     isSyncInProgress = false;
+    if (isSyncQueued) {
+      isSyncQueued = false;
+      console.log("[PhotoSync] Triggering queued photo sync execution...");
+      setTimeout(() => {
+        runAutoPhotoSync(onProgress);
+      }, 1000);
+    }
   }
 }

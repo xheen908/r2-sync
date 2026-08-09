@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import * as NavigationBar from "expo-navigation-bar";
-import { StyleSheet, View, ActivityIndicator, Platform, BackHandler } from "react-native";
+import { StyleSheet, View, Platform, BackHandler } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { getSavedConfig, ApiConfig } from "./src/services/api";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { DriveScreen } from "./src/screens/DriveScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { AnimatedSplashScreen } from "./src/components/AnimatedSplashScreen";
 
 export default function App() {
   const [config, setConfig] = useState<ApiConfig | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [showSplash, setShowSplash] = useState<boolean>(true);
   const [currentScreen, setCurrentScreen] = useState<"drive" | "settings">("drive");
 
   const checkAuthStatus = async () => {
@@ -45,13 +47,13 @@ export default function App() {
     return () => handler.remove();
   }, [currentScreen]);
 
-  if (isLoading) {
+  if (showSplash) {
     return (
       <SafeAreaProvider>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#F38020" />
+        <SafeAreaView style={styles.container} edges={["top", "left", "right", "bottom"]}>
           <StatusBar style="light" backgroundColor="#0B1120" />
-        </View>
+          <AnimatedSplashScreen onFinish={() => setShowSplash(false)} />
+        </SafeAreaView>
       </SafeAreaProvider>
     );
   }
@@ -60,6 +62,7 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.container} edges={["top", "left", "right", "bottom"]}>
         <StatusBar style="light" backgroundColor="#0F172A" />
+
         {config ? (
           currentScreen === "settings" ? (
             <SettingsScreen
@@ -76,7 +79,7 @@ export default function App() {
             />
           )
         ) : (
-          <LoginScreen onLoginSuccess={() => checkAuthStatus()} />
+          !isLoading && <LoginScreen onLoginSuccess={() => checkAuthStatus()} />
         )}
       </SafeAreaView>
     </SafeAreaProvider>

@@ -158,9 +158,12 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
     }
   }
 
-  // 2. React Native FormData fetch upload
+  // 2. React Native FormData fetch upload with timeout
   for (const endpoint of [httpsUrl, httpUrl]) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout for background uploads
+
       const cleanUri = fileUri.startsWith("file://") || fileUri.startsWith("content://") ? fileUri : `file://${fileUri}`;
       const formData = new FormData();
       // @ts-ignore
@@ -174,7 +177,9 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
       const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (response.ok) return true;
     } catch (err) {
       // Fallback
