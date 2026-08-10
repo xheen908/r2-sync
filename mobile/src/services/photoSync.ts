@@ -230,29 +230,33 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     }
 
     // 3. Smart Remote Reconciliation & Watermark Filter:
-    // Mark assets older than watermark or already present in R2 as synced so they're NEVER uploaded
+    // Ensure all videos missing from remote R2 are in the queue (removes invalid local synced entries)
     let reconciledCount = 0;
     if (allFetchedAssets.length > 0) {
       for (const asset of allFetchedAssets) {
-        if (!asset || !asset.id || syncedIdsSet.has(asset.id)) continue;
-
-        let rawAssetTime = asset.creationTime || asset.modificationTime || Date.now();
-        // expo-media-library on Android/iOS can return creationTime in seconds or milliseconds
-        const assetTime = rawAssetTime < 10000000000 ? rawAssetTime * 1000 : rawAssetTime;
-        const date = new Date(assetTime);
-        const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        if (!asset || !asset.id) continue;
 
         const rawFilename = asset.filename || `photo_${asset.id}.jpg`;
         const filename = rawFilename.toLowerCase();
-
-        const expectedPath = `kamera-uploads/${monthStr}/${filename}`;
-
         const isVideo = asset.mediaType === MediaType.video || asset.mediaType === "video" || filename.endsWith(".mp4") || filename.endsWith(".mov");
 
-        // Rule A: If file exists in R2 cloud -> Mark synced
-        // Rule B: If item is a PHOTO and was created BEFORE the watermark timestamp (old photo before app setup) -> Mark synced & ignore
-        // NOTE: VIDEOS BYPASS Rule B so ALL existing videos on the phone get backed up!
-        if (remotePathsSet.has(expectedPath) || remoteFilenamesSet.has(filename) || (!isVideo && assetTime < watermarkTime)) {
+        let rawAssetTime = asset.creationTime || asset.modificationTime || Date.now();
+        const assetTime = rawAssetTime < 10000000000 ? rawAssetTime * 1000 : rawAssetTime;
+        const date = new Date(assetTime);
+        const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        const expectedPath = `kamera-uploads/${monthStr}/${filename}`;
+
+        const existsInR2 = remotePathsSet.has(expectedPath) || remoteFilenamesSet.has(filename);
+
+        // If local storage wrongly marked an un-uploaded video as synced, remove it so it's placed back in queue!
+        if (isVideo && !existsInR2 && syncedIdsSet.has(asset.id)) {
+          syncedIdsSet.delete(asset.id);
+          console.log(`[PhotoSync] Un-synced video ${filename} (ID: ${asset.id}) reinstated into upload queue.`);
+        }
+
+        // Rule A: If file ALREADY exists in R2 cloud -> Mark synced
+        // Rule B: If item is a PHOTO and was created BEFORE the watermark timestamp -> Mark synced & ignore
+        if (existsInR2 || (!isVideo && assetTime < watermarkTime)) {
           syncedIdsSet.add(asset.id);
           reconciledCount++;
         }
