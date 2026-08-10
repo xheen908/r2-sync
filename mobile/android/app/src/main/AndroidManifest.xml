@@ -32,5 +32,10 @@
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
     </activity>
+
+    <service
+      android:name="expo.modules.taskManager.TaskService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync" />
   </application>
 </manifest>
