@@ -351,12 +351,12 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         if (uploaded) {
           successCount++;
           syncedIdsSet.add(asset.id);
-          await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
+          // Save synced IDs in background without blocking loop I/O
+          AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet))).catch(() => {});
         } else {
           console.warn("[PhotoSync] Failed to upload asset, skipping to next file:", asset.id);
-          // Mark as processed in session so queue moves forward without hanging indefinitely
           syncedIdsSet.add(asset.id);
-          await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
+          AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet))).catch(() => {});
         }
       } catch (err) {
         console.warn("[PhotoSync] Error uploading photo asset:", asset.id, err);
