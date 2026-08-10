@@ -346,6 +346,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
         console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) [${mimeType}] to ${targetPath}...`);
         
+        let lastNotifTime = 0;
         const uploaded = await uploadFileToVPS(uri, targetPath, mimeType, (filePct) => {
           const progressText = `Medien-Sicherung: ${i + 1} / ${newAssets.length} • ${filename} (${filePct}%)`;
           onProgress?.({
@@ -357,6 +358,13 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
             currentFileSizeMb: sizeMbStr,
             currentFileProgress: filePct,
           });
+
+          // Throttle notification updates to max once per 2 seconds during active upload stream
+          const nowNotif = Date.now();
+          if (nowNotif - lastNotifTime > 2000) {
+            lastNotifTime = nowNotif;
+            showProgressNotification("☁️ R2Sync Medien-Backup", progressText).catch(() => {});
+          }
         });
 
         if (uploaded) {
