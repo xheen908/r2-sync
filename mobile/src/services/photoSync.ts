@@ -346,21 +346,15 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         }
 
         console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) [${mimeType}] to ${targetPath}...`);
-        let uploaded = await uploadFileToVPS(uri, targetPath, mimeType);
-        
-        // Retry once if first attempt failed
-        if (!uploaded) {
-          console.log(`[PhotoSync] Retrying upload for asset ${asset.id}...`);
-          uploaded = await uploadFileToVPS(uri, targetPath, mimeType);
-        }
+        const uploaded = await uploadFileToVPS(uri, targetPath, mimeType);
 
         if (uploaded) {
           successCount++;
           syncedIdsSet.add(asset.id);
           await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
         } else {
-          console.warn("[PhotoSync] Failed to upload asset after retry, skipping to next file:", asset.id);
-          // Mark as processed in session so loop moves forward without hanging indefinitely
+          console.warn("[PhotoSync] Failed to upload asset, skipping to next file:", asset.id);
+          // Mark as processed in session so queue moves forward without hanging indefinitely
           syncedIdsSet.add(asset.id);
           await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
         }
