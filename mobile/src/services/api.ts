@@ -153,6 +153,9 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
     console.log(`[uploadFileToVPS] Response status: ${uploadResult.status}`);
     if (uploadResult.status >= 200 && uploadResult.status < 300) {
       return true;
+    } else if (uploadResult.status === 413) {
+      console.warn(`[uploadFileToVPS] File exceeds Cloudflare Tunnel 100MB limit (HTTP 413). Skipping asset.`);
+      return false;
     }
   } catch (err: any) {
     console.warn(`[uploadFileToVPS] FileSystem.uploadAsync error on ${httpsUrl}:`, err?.message || err);
