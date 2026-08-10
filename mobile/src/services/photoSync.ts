@@ -40,8 +40,8 @@ Notifications.setNotificationHandler({
 async function setupNotificationChannel() {
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, {
-      name: "Foto-Backup Status",
-      importance: Notifications.AndroidImportance.DEFAULT,
+      name: "Foto- & Video-Backup",
+      importance: Notifications.AndroidImportance.HIGH,
       showBadge: false,
       lightColor: "#F38020",
     });
@@ -62,7 +62,7 @@ async function showProgressNotification(title: string, body: string, isFinished 
         title,
         body,
         sound: false,
-        priority: Notifications.AndroidNotificationPriority.DEFAULT,
+        priority: Notifications.AndroidNotificationPriority.HIGH,
         sticky: !isFinished,
         autoDismiss: isFinished,
         ...(Platform.OS === "android" ? { channelId: NOTIFICATION_CHANNEL_ID } : {}),
