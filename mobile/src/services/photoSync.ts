@@ -145,16 +145,8 @@ let isSyncQueued = false;
 let lastSyncStartTime = 0;
 
 export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus) => void): Promise<number> {
-  const now = Date.now();
-  // Watchdog: If sync has been stuck for > 3 minutes (180,000ms), force-reset the lock
-  if (isSyncInProgress && now - lastSyncStartTime > 180000) {
-    console.warn("[PhotoSync] Sync was stuck for over 3 minutes. Resetting lock...");
-    isSyncInProgress = false;
-  }
-
   if (isSyncInProgress) {
-    console.log("[PhotoSync] Sync already in progress, queuing next run...");
-    isSyncQueued = true;
+    console.log("[PhotoSync] Sync already in progress, skipping duplicate trigger.");
     return 0;
   }
 
