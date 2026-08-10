@@ -327,6 +327,24 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         else if (ext === "webp") mimeType = "image/webp";
         else if (ext === "heic") mimeType = "image/heic";
 
+        // Check asset file size before upload (Cloudflare Tunnel limits uploads to 100MB)
+        let assetSizeBytes = 0;
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(uri);
+          if (fileInfo && fileInfo.exists && (fileInfo as any).size) {
+            assetSizeBytes = (fileInfo as any).size;
+          }
+        } catch (sizeErr) {}
+
+        const maxUploadBytes = 90 * 1024 * 1024; // 90 MB limit for Cloudflare Tunnels
+        if (assetSizeBytes > maxUploadBytes) {
+          const sizeMbStr = (assetSizeBytes / (1024 * 1024)).toFixed(1);
+          console.warn(`[PhotoSync] Asset ${asset.id} (${filename}) is ${sizeMbStr} MB, exceeding Cloudflare 90MB limit. Skipping.`);
+          syncedIdsSet.add(asset.id);
+          await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
+          continue;
+        }
+
         console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) [${mimeType}] to ${targetPath}...`);
         let uploaded = await uploadFileToVPS(uri, targetPath, mimeType);
         
