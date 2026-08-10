@@ -135,57 +135,53 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
   const httpsUrl = `${cfg.serverUrl}/api/files/upload`;
   const httpUrl = cfg.serverUrl.replace("https://", "http://") + "/api/files/upload";
 
-  // 1. FileSystem.uploadAsync
-  for (const endpoint of [httpsUrl, httpUrl]) {
-    try {
-      console.log(`[uploadFileToVPS] Uploading via FileSystem.uploadAsync to ${endpoint}...`);
-      const uploadResult = await FileSystem.uploadAsync(
-        endpoint,
-        fileUri,
-        {
-          httpMethod: "POST",
-          uploadType: (FileSystem as any).FileSystemUploadType?.MULTIPART || (FileSystem as any).UploadType?.MULTIPART || "multipart",
-          fieldName: "file",
-          parameters: {
-            folderPath: folderPath,
-          },
-        }
-      );
-      console.log(`[uploadFileToVPS] Response status: ${uploadResult.status}`);
-      if (uploadResult.status >= 200 && uploadResult.status < 300) {
-        return true;
+  // 1. Native FileSystem.uploadAsync to HTTPS endpoint
+  try {
+    console.log(`[uploadFileToVPS] Uploading via FileSystem.uploadAsync to ${httpsUrl}...`);
+    const uploadResult = await FileSystem.uploadAsync(
+      httpsUrl,
+      fileUri,
+      {
+        httpMethod: "POST",
+        uploadType: (FileSystem as any).FileSystemUploadType?.MULTIPART || (FileSystem as any).UploadType?.MULTIPART || "multipart",
+        fieldName: "file",
+        parameters: {
+          folderPath: folderPath,
+        },
       }
-    } catch (err: any) {
-      console.warn(`[uploadFileToVPS] FileSystem.uploadAsync error on ${endpoint}:`, err?.message || err);
+    );
+    console.log(`[uploadFileToVPS] Response status: ${uploadResult.status}`);
+    if (uploadResult.status >= 200 && uploadResult.status < 300) {
+      return true;
     }
+  } catch (err: any) {
+    console.warn(`[uploadFileToVPS] FileSystem.uploadAsync error on ${httpsUrl}:`, err?.message || err);
   }
 
-  // 2. React Native FormData fetch upload with timeout
-  for (const endpoint of [httpsUrl, httpUrl]) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout for large video uploads
+  // 2. React Native FormData fetch upload fallback
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout for large video uploads
 
-      const cleanUri = fileUri.startsWith("file://") || fileUri.startsWith("content://") ? fileUri : `file://${fileUri}`;
-      const formData = new FormData();
-      // @ts-ignore
-      formData.append("file", {
-        uri: cleanUri,
-        name: filename,
-        type: mimeType || "image/jpeg",
-      });
-      formData.append("folderPath", folderPath);
+    const cleanUri = fileUri.startsWith("file://") || fileUri.startsWith("content://") ? fileUri : `file://${fileUri}`;
+    const formData = new FormData();
+    // @ts-ignore
+    formData.append("file", {
+      uri: cleanUri,
+      name: filename,
+      type: mimeType || "image/jpeg",
+    });
+    formData.append("folderPath", folderPath);
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (response.ok) return true;
-    } catch (err) {
-      // Fallback
-    }
+    const response = await fetch(httpsUrl, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (response.ok) return true;
+  } catch (err) {
+    console.warn(`[uploadFileToVPS] FormData fetch error:`, err);
   }
 
   return false;
