@@ -19,6 +19,9 @@ export interface SyncProgressStatus {
   totalNew: number;
   uploadedCount: number;
   statusText: string;
+  currentFileName?: string;
+  currentFileSizeMb?: string;
+  currentFileProgress?: number; // 0 to 100%
 }
 
 const BACKGROUND_PHOTO_SYNC_TASK = "R2_BACKGROUND_PHOTO_SYNC_TASK";
@@ -345,8 +348,24 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
           continue;
         }
 
+        const isVid = (filename || "").endsWith(".mp4") || (filename || "").endsWith(".mov");
+        const mediaLabel = isVid ? "Video" : "Foto";
+        const sizeMbStr = assetSizeBytes > 0 ? `${(assetSizeBytes / (1024 * 1024)).toFixed(1)} MB` : "";
+
         console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) [${mimeType}] to ${targetPath}...`);
-        const uploaded = await uploadFileToVPS(uri, targetPath, mimeType);
+        
+        const uploaded = await uploadFileToVPS(uri, targetPath, mimeType, (filePct) => {
+          const progressText = `Medien-Sicherung: ${i + 1} / ${newAssets.length} • ${filename} (${filePct}%)`;
+          onProgress?.({
+            isSyncing: true,
+            totalNew: newAssets.length,
+            uploadedCount: i,
+            statusText: progressText,
+            currentFileName: filename,
+            currentFileSizeMb: sizeMbStr,
+            currentFileProgress: filePct,
+          });
+        });
 
         if (uploaded) {
           successCount++;
@@ -362,14 +381,15 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         console.warn("[PhotoSync] Error uploading photo asset:", asset.id, err);
       }
 
-      const isVid = (asset.filename || "").toLowerCase().endsWith(".mp4") || (asset.filename || "").toLowerCase().endsWith(".mov");
-      const mediaLabel = isVid ? "Video" : "Foto";
-      const progressText = `Medien-Sicherung: ${i + 1} / ${newAssets.length} (${mediaLabel} ${i + 1})`;
+      const isVidFinished = (asset.filename || "").toLowerCase().endsWith(".mp4") || (asset.filename || "").toLowerCase().endsWith(".mov");
+      const mediaLabelFinished = isVidFinished ? "Video" : "Foto";
+      const progressText = `Medien-Sicherung: ${i + 1} / ${newAssets.length} (${mediaLabelFinished} ${i + 1})`;
       onProgress?.({
         isSyncing: true,
         totalNew: newAssets.length,
         uploadedCount: i + 1,
         statusText: progressText,
+        currentFileProgress: 100,
       });
 
       // Update native Android status notification for EVERY uploaded file

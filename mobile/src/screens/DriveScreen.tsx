@@ -788,13 +788,32 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
         </View>
       </View>
 
-      {/* Auto Photo Sync Progress Bar */}
+      {/* Auto Photo Sync Progress Bar with Live File Upload Percentage */}
       {!!(syncStatus && syncStatus.statusText) && (
-        <View style={styles.syncBar}>
-          <RefreshCw size={14} color="#F38020" strokeWidth={2.2} style={{ marginRight: 8 }} />
-          <Text style={styles.syncBarText} numberOfLines={1}>
-            {syncStatus.statusText}
-          </Text>
+        <View style={styles.syncBarContainer}>
+          <View style={styles.syncBarHeader}>
+            <RefreshCw size={14} color="#F38020" strokeWidth={2.2} style={{ marginRight: 8 }} />
+            <Text style={styles.syncBarText} numberOfLines={1}>
+              {syncStatus.statusText}
+            </Text>
+            {syncStatus.currentFileProgress !== undefined && (
+              <Text style={styles.syncBarPctText}>
+                {syncStatus.currentFileProgress}%
+              </Text>
+            )}
+          </View>
+
+          {/* Visual Progress Bar Track */}
+          {syncStatus.isSyncing && syncStatus.currentFileProgress !== undefined && (
+            <View style={styles.progressBarTrack}>
+              <View 
+                style={[
+                  styles.progressBarFill, 
+                  { width: `${Math.min(100, Math.max(0, syncStatus.currentFileProgress))}%` }
+                ]} 
+              />
+            </View>
+          )}
         </View>
       )}
 
@@ -1346,9 +1365,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#334155",
   },
-  syncBar: {
-    flexDirection: "row",
-    alignItems: "center",
+  syncBarContainer: {
     backgroundColor: "#1E293B",
     borderColor: "#F3802060",
     borderWidth: 1,
@@ -1359,11 +1376,33 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
   },
+  syncBarHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   syncBarText: {
     color: "#F8FAFC",
     fontSize: 13,
     fontWeight: "600",
     flex: 1,
+  },
+  syncBarPctText: {
+    color: "#F38020",
+    fontSize: 12,
+    fontWeight: "700",
+    marginLeft: 8,
+  },
+  progressBarTrack: {
+    height: 6,
+    backgroundColor: "#0F172A",
+    borderRadius: 3,
+    marginTop: 8,
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    backgroundColor: "#F38020",
+    borderRadius: 3,
   },
   backBtn: {
     flexDirection: "row",

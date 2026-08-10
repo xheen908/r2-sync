@@ -125,7 +125,12 @@ export async function fetchFilesList(forceSync = false): Promise<FileItem[]> {
   return data.files || [];
 }
 
-export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeType: string): Promise<boolean> {
+export async function uploadFileToVPS(
+  fileUri: string, 
+  targetPath: string, 
+  mimeType: string,
+  onProgress?: (progressPercent: number) => void
+): Promise<boolean> {
   const cfg = await getSavedConfig();
   if (!cfg) throw new Error("Nicht angemeldet");
 
@@ -133,11 +138,43 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
   const folderPath = targetPath.includes("/") ? targetPath.substring(0, targetPath.lastIndexOf("/")) : "";
 
   const httpsUrl = `${cfg.serverUrl}/api/files/upload`;
-  const httpUrl = cfg.serverUrl.replace("https://", "http://") + "/api/files/upload";
 
-  // 1. Native FileSystem.uploadAsync to HTTPS endpoint
+  // 1. Native FileSystem.createUploadTask with real-time progress callback
   try {
-    console.log(`[uploadFileToVPS] Uploading via FileSystem.uploadAsync to ${httpsUrl}...`);
+    console.log(`[uploadFileToVPS] Uploading via FileSystem.createUploadTask to ${httpsUrl}...`);
+    const uploadTask = FileSystem.createUploadTask(
+      httpsUrl,
+      fileUri,
+      {
+        httpMethod: "POST",
+        uploadType: (FileSystem as any).FileSystemUploadType?.MULTIPART || (FileSystem as any).UploadType?.MULTIPART || "multipart",
+        fieldName: "file",
+        parameters: {
+          folderPath: folderPath,
+        },
+      },
+      (data) => {
+        if (data.totalBytesExpectedToSend > 0) {
+          const pct = Math.round((data.totalBytesSent / data.totalBytesExpectedToSend) * 100);
+          onProgress?.(pct);
+        }
+      }
+    );
+
+    const uploadResult = await uploadTask.uploadAsync();
+    if (uploadResult && uploadResult.status >= 200 && uploadResult.status < 300) {
+      onProgress?.(100);
+      return true;
+    } else if (uploadResult && uploadResult.status === 413) {
+      console.warn(`[uploadFileToVPS] File exceeds Cloudflare Tunnel 100MB limit (HTTP 413). Skipping asset.`);
+      return false;
+    }
+  } catch (err: any) {
+    console.warn(`[uploadFileToVPS] FileSystem.createUploadTask error on ${httpsUrl}:`, err?.message || err);
+  }
+
+  // 2. Fallback to basic uploadAsync
+  try {
     const uploadResult = await FileSystem.uploadAsync(
       httpsUrl,
       fileUri,
@@ -150,42 +187,11 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
         },
       }
     );
-    console.log(`[uploadFileToVPS] Response status: ${uploadResult.status}`);
     if (uploadResult.status >= 200 && uploadResult.status < 300) {
+      onProgress?.(100);
       return true;
-    } else if (uploadResult.status === 413) {
-      console.warn(`[uploadFileToVPS] File exceeds Cloudflare Tunnel 100MB limit (HTTP 413). Skipping asset.`);
-      return false;
     }
-  } catch (err: any) {
-    console.warn(`[uploadFileToVPS] FileSystem.uploadAsync error on ${httpsUrl}:`, err?.message || err);
-  }
-
-  // 2. React Native FormData fetch upload fallback
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min timeout for large video uploads
-
-    const cleanUri = fileUri.startsWith("file://") || fileUri.startsWith("content://") ? fileUri : `file://${fileUri}`;
-    const formData = new FormData();
-    // @ts-ignore
-    formData.append("file", {
-      uri: cleanUri,
-      name: filename,
-      type: mimeType || "image/jpeg",
-    });
-    formData.append("folderPath", folderPath);
-
-    const response = await fetch(httpsUrl, {
-      method: "POST",
-      body: formData,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (response.ok) return true;
-  } catch (err) {
-    console.warn(`[uploadFileToVPS] FormData fetch error:`, err);
-  }
+  } catch (err: any) {}
 
   return false;
 }
