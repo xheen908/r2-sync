@@ -6,18 +6,23 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300; // Allow 5 minutes execution time for large video uploads in Next.js Serverless/API
 
 export async function POST(request: Request) {
+  console.log(`[UPLOAD INCOMING] Received upload request...`);
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const folderPath = (formData.get("folderPath") as string) || "";
 
     if (!file) {
+      console.warn(`[UPLOAD REJECTED] Request received without file payload.`);
       return NextResponse.json({ error: "Keine Datei ausgewählt" }, { status: 400 });
     }
 
     const cleanFolder = folderPath ? (folderPath.endsWith("/") ? folderPath : `${folderPath}/`) : "";
     const cleanFolderNoLeading = cleanFolder.startsWith("/") ? cleanFolder.slice(1) : cleanFolder;
     const key = `${cleanFolderNoLeading}${file.name}`;
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+
+    console.log(`[UPLOAD STARTING] File: "${key}" (${sizeMb} MB) | Type: ${file.type || 'unknown'}`);
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
