@@ -34,8 +34,11 @@
     </activity>
 
     <service
-      android:name="expo.modules.taskManager.TaskService"
+      android:name="expo.modules.taskManager.TaskJobService"
+      android:enabled="true"
       android:exported="false"
-      android:foregroundServiceType="dataSync" />
+      android:foregroundServiceType="dataSync"
+      android:permission="android.permission.BIND_JOB_SERVICE"
+      tools:replace="android:foregroundServiceType" />
   </application>
 </manifest>
