@@ -57,7 +57,6 @@ export async function POST(request: Request) {
       console.warn("Upload API: SQLite insert failed:", dbErr);
     }
 
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
     console.log(`[UPLOAD SUCCESS] ${key} (${sizeMb} MB) -> R2 Bucket (${r2BucketName})`);
 
     return NextResponse.json({ success: true, path: key, filename: file.name });
