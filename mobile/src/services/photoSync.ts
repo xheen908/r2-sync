@@ -373,9 +373,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
           // Save synced IDs in background without blocking loop I/O
           AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet))).catch(() => {});
         } else {
-          console.warn("[PhotoSync] Failed to upload asset, skipping to next file:", asset.id);
-          syncedIdsSet.add(asset.id);
-          AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet))).catch(() => {});
+          console.warn("[PhotoSync] Failed to upload asset, will retry next run:", asset.id);
         }
       } catch (err) {
         console.warn("[PhotoSync] Error uploading photo asset:", asset.id, err);
