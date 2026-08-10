@@ -334,14 +334,23 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         else if (ext === "heic") mimeType = "image/heic";
 
         console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) [${mimeType}] to ${targetPath}...`);
-        const uploaded = await uploadFileToVPS(uri, targetPath, mimeType);
+        let uploaded = await uploadFileToVPS(uri, targetPath, mimeType);
+        
+        // Retry once if first attempt failed
+        if (!uploaded) {
+          console.log(`[PhotoSync] Retrying upload for asset ${asset.id}...`);
+          uploaded = await uploadFileToVPS(uri, targetPath, mimeType);
+        }
 
         if (uploaded) {
           successCount++;
           syncedIdsSet.add(asset.id);
           await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
         } else {
-          console.warn("[PhotoSync] Failed to upload asset, will retry on next sync:", asset.id);
+          console.warn("[PhotoSync] Failed to upload asset after retry, skipping to next file:", asset.id);
+          // Mark as processed in session so loop moves forward without hanging indefinitely
+          syncedIdsSet.add(asset.id);
+          await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
         }
       } catch (err) {
         console.warn("[PhotoSync] Error uploading photo asset:", asset.id, err);

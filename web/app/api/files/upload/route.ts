@@ -3,6 +3,7 @@ import { s3Client, r2BucketName } from "@/lib/r2";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300; // Allow 5 minutes execution time for large video uploads in Next.js Serverless/API
 
 export async function POST(request: Request) {
   try {
