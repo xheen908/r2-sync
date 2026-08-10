@@ -138,6 +138,7 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
   // 1. FileSystem.uploadAsync
   for (const endpoint of [httpsUrl, httpUrl]) {
     try {
+      console.log(`[uploadFileToVPS] Uploading via FileSystem.uploadAsync to ${endpoint}...`);
       const uploadResult = await FileSystem.uploadAsync(
         endpoint,
         fileUri,
@@ -150,11 +151,12 @@ export async function uploadFileToVPS(fileUri: string, targetPath: string, mimeT
           },
         }
       );
+      console.log(`[uploadFileToVPS] Response status: ${uploadResult.status}`);
       if (uploadResult.status >= 200 && uploadResult.status < 300) {
         return true;
       }
-    } catch (err) {
-      // Fallback
+    } catch (err: any) {
+      console.warn(`[uploadFileToVPS] FileSystem.uploadAsync error on ${endpoint}:`, err?.message || err);
     }
   }
 

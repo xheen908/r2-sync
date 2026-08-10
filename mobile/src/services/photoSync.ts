@@ -247,14 +247,8 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
         const date = new Date(assetTime);
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
-        let filename = (asset.filename || "").toLowerCase();
-        if (!filename || filename.startsWith("photo_") || !filename.includes(".")) {
-          const uriPart = (asset.uri || "").split("/").pop();
-          if (uriPart && uriPart.includes(".")) {
-            filename = uriPart.toLowerCase();
-          }
-        }
-        if (!filename) filename = `photo_${asset.id}.jpg`;
+        const rawFilename = asset.filename || `photo_${asset.id}.jpg`;
+        const filename = rawFilename.toLowerCase();
 
         const expectedPath = `kamera-uploads/${monthStr}/${filename}`;
 
