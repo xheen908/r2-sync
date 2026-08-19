@@ -153,19 +153,24 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
   isSyncInProgress = true;
   lastSyncStartTime = Date.now();
   try {
-    // Check Wi-Fi restriction setting
-    const wifiOnly = await getWifiOnlySyncSetting();
-    if (wifiOnly) {
-      try {
-        const netState = await Network.getNetworkStateAsync();
-        if (netState.type !== Network.NetworkStateType.WIFI) {
-          console.log("[PhotoSync] Wi-Fi only sync is enabled and device is not on Wi-Fi. Skipping sync.");
-          onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Warte auf WLAN-Verbindung..." });
-          return 0;
-        }
-      } catch (netErr) {
-        console.warn("[PhotoSync] Failed to check network state", netErr);
+    // 0. Pre-Flight Network Reachability Guard
+    try {
+      const netState = await Network.getNetworkStateAsync();
+      if (!netState.isConnected || netState.isInternetReachable === false) {
+        console.log("[PhotoSync] Device is completely offline or has no internet reachability. Skipping sync gracefully.");
+        onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Keine Internetverbindung..." });
+        return 0;
       }
+
+      // Check Wi-Fi restriction setting
+      const wifiOnly = await getWifiOnlySyncSetting();
+      if (wifiOnly && netState.type !== Network.NetworkStateType.WIFI) {
+        console.log("[PhotoSync] Wi-Fi only sync is enabled and device is not on Wi-Fi. Skipping sync.");
+        onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Warte auf WLAN-Verbindung..." });
+        return 0;
+      }
+    } catch (netErr) {
+      console.warn("[PhotoSync] Failed to check network state", netErr);
     }
 
     const hasPerms = await requestMediaPermissions();
