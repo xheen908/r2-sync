@@ -5,9 +5,10 @@ set -e
 COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "1")
 NEXT_COUNT=$((COMMIT_COUNT + 1))
 
+# Calculate version: Major.Minor.Patch where Minor increases every 100 commits (e.g. 138 commits -> v0.2.38)
 MAJOR=0
-MINOR=$((NEXT_COUNT / 100))
-PATCH=$((NEXT_COUNT % 100))
+MINOR=$(( (NEXT_COUNT - 1) / 100 + 1 ))
+PATCH=$(( NEXT_COUNT % 100 ))
 VERSION_STRING="${MAJOR}.${MINOR}.${PATCH}"
 
 echo "🚀 Auto-versioning to v${VERSION_STRING} (Build ${NEXT_COUNT})..."
