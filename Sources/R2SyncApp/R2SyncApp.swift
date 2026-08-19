@@ -22,7 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        if UserDefaults.standard.object(forKey: "hideDockIcon") == nil {
+            UserDefaults.standard.set(true, forKey: "hideDockIcon")
+        }
+        let hideDock = UserDefaults.standard.bool(forKey: "hideDockIcon")
+        updateActivationPolicy(hideDockIcon: hideDock)
 
         // Setup NSStatusItem in System Tray
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -60,6 +64,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func updateActivationPolicy(hideDockIcon: Bool) {
+        DispatchQueue.main.async {
+            if hideDockIcon {
+                NSApp.setActivationPolicy(.accessory)
+            } else {
+                NSApp.setActivationPolicy(.regular)
+            }
+        }
+    }
+
     @objc func togglePopover() {
         guard let button = statusItem?.button else { return }
         if let popover = popover, popover.isShown {
@@ -75,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 480, height: 380),
+                contentRect: NSRect(x: 0, y: 0, width: 480, height: 440),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
@@ -94,7 +108,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.settingsWindow = window
         }
 
-        NSApp.setActivationPolicy(.regular)
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -263,6 +276,8 @@ struct SettingsView: View {
     @ObservedObject var configManager: ConfigManager
     var onClose: () -> Void
 
+    @State private var hideDockIcon: Bool = false
+
     // VPS Login Fields
     @State private var serverUrl: String = "https://drive.ocpp-labs.com"
     @State private var username: String = "admin"
@@ -327,7 +342,18 @@ struct SettingsView: View {
                     }
                 }
 
-                // Section 3: Expandable Advanced Manual R2 Keys
+                // Section 3: App Behavior & Appearance
+                Section(header: Text("🖥️ App-Verhalten").font(.headline)) {
+                    Toggle("Dock-Icon ausblenden (nur in Menüleiste anzeigen)", isOn: $hideDockIcon)
+                        .onChange(of: hideDockIcon) { newValue in
+                            UserDefaults.standard.set(newValue, forKey: "hideDockIcon")
+                            if let delegate = NSApp.delegate as? AppDelegate {
+                                delegate.updateActivationPolicy(hideDockIcon: newValue)
+                            }
+                        }
+                }
+
+                // Section 4: Expandable Advanced Manual R2 Keys
                 DisclosureGroup("⚙️ Erweiterte Cloudflare R2 Keys (Manuell)", isExpanded: $showManualR2Section) {
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("Account ID:", text: $accountId, prompt: Text("z.B. 10c9109e9e342e2b..."))
@@ -366,8 +392,9 @@ struct SettingsView: View {
             .padding()
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 500, height: 460)
+        .frame(width: 500, height: 500)
         .onAppear {
+            hideDockIcon = UserDefaults.standard.bool(forKey: "hideDockIcon")
             accountId = configManager.config.accountId
             accessKeyId = configManager.config.accessKeyId
             secretAccessKey = configManager.config.secretAccessKey
