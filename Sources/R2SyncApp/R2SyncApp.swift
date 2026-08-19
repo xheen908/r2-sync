@@ -278,6 +278,14 @@ struct SettingsView: View {
 
     @State private var hideDockIcon: Bool = false
 
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.56"
+    }
+
+    private var appBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "56"
+    }
+
     // VPS Login Fields
     @State private var serverUrl: String = "https://drive.ocpp-labs.com"
     @State private var username: String = "admin"
@@ -353,7 +361,18 @@ struct SettingsView: View {
                         }
                 }
 
-                // Section 4: Expandable Advanced Manual R2 Keys
+                // Section 4: App Information & Version
+                Section(header: Text("ℹ️ App-Information").font(.headline)) {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text("v\(appVersion) (Build \(appBuild))")
+                            .foregroundColor(.secondary)
+                            .fontWeight(.medium)
+                    }
+                }
+
+                // Section 5: Expandable Advanced Manual R2 Keys
                 DisclosureGroup("⚙️ Erweiterte Cloudflare R2 Keys (Manuell)", isExpanded: $showManualR2Section) {
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("Account ID:", text: $accountId, prompt: Text("z.B. 10c9109e9e342e2b..."))
