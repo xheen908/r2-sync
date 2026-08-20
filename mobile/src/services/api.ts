@@ -54,21 +54,27 @@ export async function setSyncIntervalSetting(minutes: number): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEYS.SYNC_INTERVAL, minutes.toString());
 }
 
+let cachedConfig: ApiConfig | null = null;
+
 export async function getSavedConfig(): Promise<ApiConfig | null> {
+  if (cachedConfig) return cachedConfig;
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.CONFIG);
     if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (err) {
+    cachedConfig = JSON.parse(raw);
+    return cachedConfig;
+  } catch {
     return null;
   }
 }
 
 export async function saveConfig(config: ApiConfig): Promise<void> {
+  cachedConfig = config;
   await AsyncStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(config));
 }
 
 export async function clearConfig(): Promise<void> {
+  cachedConfig = null;
   await AsyncStorage.removeItem(STORAGE_KEYS.CONFIG);
 }
 
@@ -139,9 +145,8 @@ export async function uploadFileToVPS(
 
   const httpsUrl = `${cfg.serverUrl}/api/files/upload`;
 
-  // 1. Native FileSystem.createUploadTask with real-time progress callback
+  // 1. Native FileSystem.createUploadTask with real-time progress callback & 45s hard timeout safety
   try {
-    console.log(`[uploadFileToVPS] Uploading via FileSystem.createUploadTask to ${httpsUrl}...`);
     const uploadTask = FileSystem.createUploadTask(
       httpsUrl,
       fileUri,
@@ -161,7 +166,15 @@ export async function uploadFileToVPS(
       }
     );
 
-    const uploadResult = await uploadTask.uploadAsync();
+    // Hard safety timeout: If network stalls completely, abort uploadTask after 45s so queue moves on
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => {
+        uploadTask.cancelAsync().catch(() => {});
+        resolve(null);
+      }, 45000);
+    });
+
+    const uploadResult = await Promise.race([uploadTask.uploadAsync(), timeoutPromise]);
     if (uploadResult && uploadResult.status >= 200 && uploadResult.status < 300) {
       onProgress?.(100);
       return true;
@@ -172,26 +185,6 @@ export async function uploadFileToVPS(
   } catch (err: any) {
     console.warn(`[uploadFileToVPS] FileSystem.createUploadTask error on ${httpsUrl}:`, err?.message || err);
   }
-
-  // 2. Fallback to basic uploadAsync
-  try {
-    const uploadResult = await FileSystem.uploadAsync(
-      httpsUrl,
-      fileUri,
-      {
-        httpMethod: "POST",
-        uploadType: (FileSystem as any).FileSystemUploadType?.MULTIPART || (FileSystem as any).UploadType?.MULTIPART || "multipart",
-        fieldName: "file",
-        parameters: {
-          folderPath: folderPath,
-        },
-      }
-    );
-    if (uploadResult.status >= 200 && uploadResult.status < 300) {
-      onProgress?.(100);
-      return true;
-    }
-  } catch (err: any) {}
 
   return false;
 }

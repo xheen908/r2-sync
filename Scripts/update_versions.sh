@@ -28,4 +28,10 @@ if [ -f "mobile/app.json" ]; then
   sed -i '' -E 's/"versionCode": [0-9]+/"versionCode": '"$NEXT_COUNT"'/' mobile/app.json
 fi
 
-echo "✅ Updated Info.plist, mobile/package.json, and mobile/app.json"
+# Update mobile/android/app/build.gradle
+if [ -f "mobile/android/app/build.gradle" ]; then
+  sed -i '' -E 's/versionCode [0-9]+/versionCode '"$NEXT_COUNT"'/' mobile/android/app/build.gradle
+  sed -i '' -E 's/versionName "[0-9]+\.[0-9]+\.[0-9]+"/versionName "'"$VERSION_STRING"'"/' mobile/android/app/build.gradle
+fi
+
+echo "✅ Updated Info.plist, mobile/package.json, mobile/app.json, and android/app/build.gradle"

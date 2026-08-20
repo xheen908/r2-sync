@@ -3,7 +3,7 @@
     "name": "R2Sync",
     "slug": "r2sync-mobile",
     "scheme": "r2sync",
-    "version": "0.2.39",
+    "version": "0.2.40",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.r2sync.mobile",
-      "versionCode": 139,
+      "versionCode": 140,
       "navigationBar": {
         "backgroundColor": "#0B1120",
         "barStyle": "light-content"

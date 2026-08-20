@@ -143,10 +143,41 @@ export async function registerBackgroundPhotoSyncTask() {
 let isSyncInProgress = false;
 let isSyncQueued = false;
 let lastSyncStartTime = 0;
+let cachedSyncedIdsSet: Set<string> | null = null;
+let syncListeners: ((status: SyncProgressStatus) => void)[] = [];
+let lastReportedSyncStatus: SyncProgressStatus | null = null;
+
+export function addSyncProgressListener(listener: (status: SyncProgressStatus) => void) {
+  syncListeners.push(listener);
+  if (lastReportedSyncStatus) {
+    listener(lastReportedSyncStatus);
+  }
+  return () => {
+    syncListeners = syncListeners.filter((l) => l !== listener);
+  };
+}
+
+function broadcastSyncProgress(status: SyncProgressStatus) {
+  lastReportedSyncStatus = status;
+  syncListeners.forEach((l) => l(status));
+}
 
 export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus) => void): Promise<number> {
+  if (onProgress) {
+    addSyncProgressListener(onProgress);
+  }
+
+  // Lock Safety Timeout: Reset lock if it was stuck/held for > 3 minutes (e.g. app restart/crash during active upload)
+  if (isSyncInProgress && Date.now() - lastSyncStartTime > 180000) {
+    console.warn("[PhotoSync] Sync lock held for > 3m. Forcing lock reset.");
+    isSyncInProgress = false;
+  }
+
   if (isSyncInProgress) {
-    console.log("[PhotoSync] Sync already in progress, skipping duplicate trigger.");
+    console.log("[PhotoSync] Sync already in progress, registered listener to ongoing sync.");
+    if (lastReportedSyncStatus) {
+      onProgress?.(lastReportedSyncStatus);
+    }
     return 0;
   }
 
@@ -179,63 +210,84 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       return 0;
     }
 
-    const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
-    const syncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
-
-    // Watermark cutoff: Baseline timestamp set to 2 hours before first setup to ensure newly taken photos are included
-    let rawWatermark = await AsyncStorage.getItem("r2sync_photo_watermark_timestamp");
-    if (!rawWatermark) {
-      // Set watermark to 2 hours ago so any photos taken right before or during setup are uploaded
-      const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
-      rawWatermark = twoHoursAgo.toString();
-      await AsyncStorage.setItem("r2sync_photo_watermark_timestamp", rawWatermark);
-      console.log(`[PhotoSync] Initialized watermark timestamp to ${new Date(Number(rawWatermark)).toISOString()}`);
+    if (!cachedSyncedIdsSet) {
+      const rawSyncedIds = await AsyncStorage.getItem(STORAGE_KEYS.SYNCED_ASSET_IDS);
+      cachedSyncedIdsSet = new Set<string>(rawSyncedIds ? JSON.parse(rawSyncedIds) : []);
     }
-    const watermarkTime = Number(rawWatermark);
+    const syncedIdsSet = cachedSyncedIdsSet;
+
+    let lastWatermarkMs = 0;
+    const rawLastSync = await AsyncStorage.getItem(STORAGE_KEYS.LAST_SYNC_TIME);
+    if (rawLastSync) {
+      lastWatermarkMs = parseInt(rawLastSync, 10);
+    }
 
     // 1. Fetch remote files list from VPS to build an R2 existence index
+    broadcastSyncProgress({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Prüfe Galerie-Updates..." });
+
     let remotePathsSet = new Set<string>();
     let remoteFilenamesSet = new Set<string>();
+    let remoteBaseNamesSet = new Set<string>();
     try {
-      const remoteFiles = await fetchFilesList(true);
+      const remoteFiles = await fetchFilesList(false); // Quick fetch from DB
       remoteFiles.forEach((file) => {
         if (file && file.path) {
           const lowerPath = file.path.toLowerCase();
           remotePathsSet.add(lowerPath);
           const fname = lowerPath.split("/").pop();
           if (fname) {
-            remoteFilenamesSet.add(fname);
+            remoteFilenamesSet.add(fname.toLowerCase());
+            // Extract base name before any extension, e.g. "img-20260131-wa0002.jpeg" -> "img-20260131-wa0002"
+            const parts = fname.toLowerCase().split(".");
+            if (parts.length > 1) parts.pop();
+            const base = parts.join(".");
+            remoteBaseNamesSet.add(base);
           }
         }
       });
-      console.log(`[PhotoSync] Loaded ${remotePathsSet.size} remote file(s) from R2 bucket.`);
     } catch (remoteErr) {
       console.warn("[PhotoSync] Could not fetch remote file list for reconciliation:", remoteErr);
     }
 
-    // 2. Fetch photo & video assets from Camera Roll (newest items first)
-    let allFetchedAssets: any[] = [];
-    let hasNextPage = true;
-    let afterCursor: string | undefined = undefined;
+    // 2. High-Watermark Fetch: Fetch ONLY assets created after the last sync timestamp
+    const fetchOptions: any = {
+      first: 500,
+      sortBy: [SortBy.creationTime],
+      mediaType: [MediaType.photo, MediaType.video],
+    };
 
-    while (hasNextPage && allFetchedAssets.length < 5000) {
-      const pageResult = await getAssetsAsync({
-        first: 100,
-        after: afterCursor,
-        sortBy: [SortBy.creationTime],
-        mediaType: [MediaType.photo, MediaType.video],
-      });
-
-      if (pageResult.assets && pageResult.assets.length > 0) {
-        allFetchedAssets.push(...pageResult.assets);
-      }
-
-      hasNextPage = pageResult.hasNextPage;
-      afterCursor = pageResult.endCursor;
+    if (lastWatermarkMs > 0) {
+      // expo-media-library expects UNIX timestamp in SECONDS for createdAfter / createdBefore
+      fetchOptions.createdAfter = Math.floor(lastWatermarkMs / 1000);
     }
 
-    // 3. Smart Remote Reconciliation & Watermark Filter:
-    // Ensure all videos missing from remote R2 are in the queue (removes invalid local synced entries)
+    const pageResult = await getAssetsAsync(fetchOptions);
+    let allFetchedAssets: any[] = pageResult.assets || [];
+
+    // Cold-start fallback: If no watermark exists yet (first run), paginate up to 3000 assets
+    if (lastWatermarkMs === 0 && pageResult.hasNextPage) {
+      let afterCursor = pageResult.endCursor;
+      let hasNextPage = pageResult.hasNextPage;
+      while (hasNextPage && allFetchedAssets.length < 3000) {
+        const pRes = await getAssetsAsync({
+          first: 500,
+          after: afterCursor,
+          sortBy: [SortBy.creationTime],
+          mediaType: [MediaType.photo, MediaType.video],
+        });
+        if (pRes.assets && pRes.assets.length > 0) {
+          allFetchedAssets.push(...pRes.assets);
+        }
+        hasNextPage = pRes.hasNextPage;
+        afterCursor = pRes.endCursor;
+      }
+    }
+
+    // Filter out items already present in syncedIdsSet
+    const unSyncedFetched = allFetchedAssets.filter((asset) => asset && asset.id && !syncedIdsSet.has(asset.id));
+    console.log(`[PhotoSync] Watermark: ${lastWatermarkMs > 0 ? new Date(lastWatermarkMs).toISOString() : "NONE"} -> ${unSyncedFetched.length} un-synced asset(s) found.`);
+
+    // 3. Smart Remote Reconciliation:
     let reconciledCount = 0;
     if (allFetchedAssets.length > 0) {
       for (const asset of allFetchedAssets) {
@@ -243,46 +295,56 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
         const rawFilename = asset.filename || `photo_${asset.id}.jpg`;
         const filename = rawFilename.toLowerCase();
-        const isVideo = asset.mediaType === MediaType.video || asset.mediaType === "video" || filename.endsWith(".mp4") || filename.endsWith(".mov");
+        const fnameParts = filename.split(".");
+        if (fnameParts.length > 1) fnameParts.pop();
+        const baseName = fnameParts.join(".");
 
         let rawAssetTime = asset.creationTime || asset.modificationTime || Date.now();
         const assetTime = rawAssetTime < 10000000000 ? rawAssetTime * 1000 : rawAssetTime;
         const date = new Date(assetTime);
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const expectedPath = `kamera-uploads/${monthStr}/${filename}`;
+        const expectedPathLower = `kamera-uploads/${monthStr}/${filename}`;
+        const cleanBase = baseName.replace(/[^a-z0-9]/g, "");
 
-        const existsInR2 = remotePathsSet.has(expectedPath) || remoteFilenamesSet.has(filename);
+        const existsInR2 = 
+          remotePathsSet.has(expectedPathLower) || 
+          remoteFilenamesSet.has(filename) || 
+          remoteBaseNamesSet.has(baseName) ||
+          Array.from(remoteBaseNamesSet).some((rBase) => rBase.replace(/[^a-z0-9]/g, "") === cleanBase && cleanBase.length > 5);
 
-        // If local storage wrongly marked an un-uploaded video as synced, remove it so it's placed back in queue!
-        if (isVideo && !existsInR2 && syncedIdsSet.has(asset.id)) {
+        if (!existsInR2 && syncedIdsSet.has(asset.id)) {
           syncedIdsSet.delete(asset.id);
-          console.log(`[PhotoSync] Un-synced video ${filename} (ID: ${asset.id}) reinstated into upload queue.`);
         }
 
-        // Rule A: If file ALREADY exists in R2 cloud -> Mark synced
-        // Rule B: If item is a PHOTO and was created BEFORE the watermark timestamp -> Mark synced & ignore
-        if (existsInR2 || (!isVideo && assetTime < watermarkTime)) {
+        if (existsInR2) {
           syncedIdsSet.add(asset.id);
           reconciledCount++;
         }
       }
 
       if (reconciledCount > 0) {
-        console.log(`[PhotoSync] Filtered/Matched ${reconciledCount} asset(s) (existing in R2 or older than setup watermark).`);
-        await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
+        AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet))).catch(() => {});
       }
     }
 
     const newAssets = allFetchedAssets.filter((asset) => asset && asset.id && !syncedIdsSet.has(asset.id));
 
+    // Only advance watermark up to the highest timestamp of confirmed synced assets
+    const syncedFetchedAssets = allFetchedAssets.filter((asset) => asset && asset.id && syncedIdsSet.has(asset.id));
+    if (syncedFetchedAssets.length > 0) {
+      const maxSyncedTime = Math.max(...syncedFetchedAssets.map((a) => a.creationTime || a.modificationTime || Date.now()));
+      const watermarkToSave = maxSyncedTime < 10000000000 ? maxSyncedTime * 1000 : maxSyncedTime;
+      AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNC_TIME, watermarkToSave.toString()).catch(() => {});
+    }
+
     if (newAssets.length === 0) {
       const msg = allFetchedAssets.length === 0 ? "Keine Fotos im Telefonspeicher" : "Fotogalerie ist aktuell";
-      onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: msg });
+      broadcastSyncProgress({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: msg });
       return 0;
     }
 
     const startMsg = `${newAssets.length} neue(s) Medien-Datei(en) (Fotos & Videos) erkannt. Sichere in Cloud...`;
-    onProgress?.({
+    broadcastSyncProgress({
       isSyncing: true,
       totalNew: newAssets.length,
       uploadedCount: 0,
@@ -291,109 +353,106 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     await showProgressNotification("☁️ R2Sync Medien-Backup", startMsg);
 
     let successCount = 0;
+    let completedCount = 0;
 
-    for (let i = 0; i < newAssets.length; i++) {
-      const asset = newAssets[i];
-      if (!asset || !asset.id || syncedIdsSet.has(asset.id)) continue;
+    // ----------------------------------------------------
+    // HIGH-PERFORMANCE: 12 Parallel Connection Worker Pool
+    // ----------------------------------------------------
+    const CONCURRENCY_LIMIT = 12; // Tuned for Wi-Fi 6 gigabit upload pipelines
+    let queueIndex = 0;
+    let lastUiUpdate = 0;
 
-      try {
-        const assetInfo = await getAssetInfoAsync(asset).catch(() => null);
-        const uri = assetInfo?.localUri || assetInfo?.uri || asset.uri;
-        if (!uri) {
-          console.warn("[PhotoSync] Could not resolve URI for asset:", asset.id);
-          continue;
-        }
+    const notifyProgressThrottled = (status: SyncProgressStatus, force = false) => {
+      const now = Date.now();
+      if (force || now - lastUiUpdate > 100) { // Throttle React state re-renders to max 10Hz
+        lastUiUpdate = now;
+        broadcastSyncProgress(status);
+      }
+    };
 
-        const assetTime = asset.creationTime || asset.modificationTime || Date.now();
+    const worker = async () => {
+      while (queueIndex < newAssets.length) {
+        const currentIndex = queueIndex++;
+        const asset = newAssets[currentIndex];
+        if (!asset || !asset.id || syncedIdsSet.has(asset.id)) continue;
 
-        // Target path e.g.: Kamera-Uploads/2026-08/filename.jpg
-        const date = new Date(assetTime);
-        const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        const filename = asset.filename || `photo_${asset.id}.jpg`;
-        const targetPath = `Kamera-Uploads/${monthStr}/${filename}`;
-
-        // Double check against remote R2 before performing upload
-        if (remotePathsSet.has(targetPath.toLowerCase())) {
-          console.log(`[PhotoSync] Target ${targetPath} already exists in R2 cloud. Marking as synced.`);
-          syncedIdsSet.add(asset.id);
-          await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
-          continue;
-        }
-
-        const ext = filename.split(".").pop()?.toLowerCase() || "";
-        let mimeType = "image/jpeg";
-        if (ext === "mp4") mimeType = "video/mp4";
-        else if (ext === "mov") mimeType = "video/quicktime";
-        else if (ext === "m4v") mimeType = "video/x-m4v";
-        else if (ext === "mkv") mimeType = "video/x-matroska";
-        else if (ext === "webm") mimeType = "video/webm";
-        else if (ext === "png") mimeType = "image/png";
-        else if (ext === "webp") mimeType = "image/webp";
-        else if (ext === "heic") mimeType = "image/heic";
-
-        // Check asset file size before upload (Cloudflare Tunnel limits uploads to 100MB)
-        let assetSizeBytes = 0;
         try {
-          const fileInfo = await FileSystem.getInfoAsync(uri);
-          if (fileInfo && fileInfo.exists && (fileInfo as any).size) {
-            assetSizeBytes = (fileInfo as any).size;
+          const uri = asset.uri;
+          if (!uri) continue;
+
+          const assetTime = asset.creationTime || asset.modificationTime || Date.now();
+          const date = new Date(assetTime);
+          const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+          const filename = asset.filename || `photo_${asset.id}.jpg`;
+          const targetPath = `Kamera-Uploads/${monthStr}/${filename}`;
+
+          if (remotePathsSet.has(targetPath.toLowerCase())) {
+            syncedIdsSet.add(asset.id);
+            completedCount++;
+            continue;
           }
-        } catch (sizeErr) {}
 
-        const maxUploadBytes = 90 * 1024 * 1024; // 90 MB limit for Cloudflare Tunnels
-        if (assetSizeBytes > maxUploadBytes) {
-          const sizeMbStr = (assetSizeBytes / (1024 * 1024)).toFixed(1);
-          console.warn(`[PhotoSync] Asset ${asset.id} (${filename}) is ${sizeMbStr} MB, exceeding Cloudflare 90MB limit. Skipping.`);
-          syncedIdsSet.add(asset.id);
-          await AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet)));
-          continue;
-        }
+          const ext = filename.split(".").pop()?.toLowerCase() || "";
+          let mimeType = "image/jpeg";
+          if (ext === "mp4") mimeType = "video/mp4";
+          else if (ext === "mov") mimeType = "video/quicktime";
+          else if (ext === "png") mimeType = "image/png";
+          else if (ext === "webp") mimeType = "image/webp";
 
-        const isVid = (filename || "").endsWith(".mp4") || (filename || "").endsWith(".mov");
-        const mediaLabel = isVid ? "Video" : "Foto";
-        const sizeMbStr = assetSizeBytes > 0 ? `${(assetSizeBytes / (1024 * 1024)).toFixed(1)} MB` : "";
+          const tStart = Date.now();
+          const uploaded = await uploadFileToVPS(uri, targetPath, mimeType, (filePct) => {
+            const progressText = `Medien-Sicherung: ${completedCount + 1} / ${newAssets.length} • ${filename}`;
+            notifyProgressThrottled({
+              isSyncing: true,
+              totalNew: newAssets.length,
+              uploadedCount: completedCount,
+              statusText: progressText,
+              currentFileName: filename,
+              currentFileProgress: filePct,
+            });
+          });
+          const elapsed = Date.now() - tStart;
+          completedCount++;
 
-        console.log(`[PhotoSync] Uploading asset ${asset.id} (${filename}) [${mimeType}] to ${targetPath}...`);
-        
-        const uploaded = await uploadFileToVPS(uri, targetPath, mimeType, (filePct) => {
-          const progressText = `Medien-Sicherung: ${i + 1} / ${newAssets.length} • ${filename} (${filePct}%)`;
-          onProgress?.({
+          if (uploaded) {
+            successCount++;
+            syncedIdsSet.add(asset.id);
+            console.log(`[PhotoSync Speed] Asset ${filename} uploaded in ${elapsed}ms`);
+          }
+
+          const progressText = `Medien-Sicherung: ${completedCount} / ${newAssets.length} • ${filename}`;
+          notifyProgressThrottled({
             isSyncing: true,
             totalNew: newAssets.length,
-            uploadedCount: i,
+            uploadedCount: completedCount,
             statusText: progressText,
             currentFileName: filename,
-            currentFileSizeMb: sizeMbStr,
-            currentFileProgress: filePct,
+            currentFileProgress: Math.round((completedCount / newAssets.length) * 100),
           });
-        });
-
-        if (uploaded) {
-          successCount++;
-          syncedIdsSet.add(asset.id);
-          // Save synced IDs in background without blocking loop I/O
-          AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet))).catch(() => {});
-        } else {
-          console.warn("[PhotoSync] Failed to upload asset, will retry next run:", asset.id);
+        } catch (err) {
+          console.warn("[PhotoSync Worker Error]:", err);
         }
-      } catch (err) {
-        console.warn("[PhotoSync] Error uploading photo asset:", asset.id, err);
       }
+    };
 
-      const isVidFinished = (asset.filename || "").toLowerCase().endsWith(".mp4") || (asset.filename || "").toLowerCase().endsWith(".mov");
-      const mediaLabelFinished = isVidFinished ? "Video" : "Foto";
-      const progressText = `Medien-Sicherung: ${i + 1} / ${newAssets.length} (${mediaLabelFinished} ${i + 1})`;
-      onProgress?.({
-        isSyncing: true,
-        totalNew: newAssets.length,
-        uploadedCount: i + 1,
-        statusText: progressText,
-        currentFileProgress: 100,
-      });
+    // Spawn 4 concurrent worker threads running the queue
+    const workers = Array.from({ length: Math.min(CONCURRENCY_LIMIT, newAssets.length) }, () => worker());
+    await Promise.all(workers);
 
-      // Update native Android status notification for EVERY uploaded file
-      await showProgressNotification("☁️ R2Sync Medien-Backup", progressText);
-    }
+    // Final UI flush & Notification
+    const progressText = `Medien-Sicherung: ${completedCount} / ${newAssets.length}`;
+    notifyProgressThrottled({
+      isSyncing: true,
+      totalNew: newAssets.length,
+      uploadedCount: completedCount,
+      statusText: progressText,
+      currentFileProgress: 100,
+    }, true);
+    showProgressNotification("☁️ R2Sync Medien-Backup", progressText).catch(() => {});
+
+    // Persist synced asset IDs and high watermark timestamp to storage
+    AsyncStorage.setItem(STORAGE_KEYS.SYNCED_ASSET_IDS, JSON.stringify(Array.from(syncedIdsSet))).catch(() => {});
+    AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNC_TIME, Date.now().toString()).catch(() => {});
 
     if (successCount > 0) {
       const finishText = `Sync abgeschlossen: ${successCount} Datei(en) gesichert`;

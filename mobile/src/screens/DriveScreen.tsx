@@ -71,6 +71,7 @@ import {
   subscribeToMediaChanges,
   runAutoPhotoSync,
   registerBackgroundPhotoSyncTask,
+  addSyncProgressListener,
   SyncProgressStatus,
 } from "../services/photoSync";
 import { AppState } from "react-native";
@@ -246,20 +247,25 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
     // Register background task for Android 15/16 compliance
     registerBackgroundPhotoSyncTask();
 
+    // Subscribe to global sync progress updates in real-time
+    const unsubscribeSync = addSyncProgressListener((status) => {
+      setSyncStatus(status);
+    });
+
     // Run photo sync once on app launch
-    runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
+    runAutoPhotoSync().then(() => loadData());
 
     // 1. Listen for new photos added to Camera Roll in real-time
     const mediaSub = subscribeToMediaChanges(() => {
       console.log("[DriveScreen] Real-time photo addition detected in Camera Roll");
-      runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
+      runAutoPhotoSync().then(() => loadData());
     });
 
     // 2. Listen for AppState changes (e.g. returning to R2Sync from Camera app)
     const appStateSub = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
         console.log("[DriveScreen] App active, triggering photo sync");
-        runAutoPhotoSync((status) => setSyncStatus(status)).then(() => loadData());
+        runAutoPhotoSync().then(() => loadData());
       }
     });
 
@@ -788,34 +794,54 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
         </View>
       </View>
 
-      {/* Auto Photo Sync Progress Bar with Live File Upload Percentage */}
-      {!!(syncStatus && syncStatus.statusText) && (
-        <View style={styles.syncBarContainer}>
-          <View style={styles.syncBarHeader}>
-            <RefreshCw size={14} color="#F38020" strokeWidth={2.2} style={{ marginRight: 8 }} />
-            <Text style={styles.syncBarText} numberOfLines={1}>
-              {syncStatus.statusText}
-            </Text>
-            {syncStatus.currentFileProgress !== undefined && (
-              <Text style={styles.syncBarPctText}>
-                {syncStatus.currentFileProgress}%
-              </Text>
-            )}
-          </View>
-
-          {/* Visual Progress Bar Track */}
-          {syncStatus.isSyncing && syncStatus.currentFileProgress !== undefined && (
-            <View style={styles.progressBarTrack}>
-              <View 
-                style={[
-                  styles.progressBarFill, 
-                  { width: `${Math.min(100, Math.max(0, syncStatus.currentFileProgress))}%` }
-                ]} 
-              />
-            </View>
-          )}
+      {/* Auto Photo Sync Progress Bar with Dual Progress Indicators */}
+      <View style={styles.syncBarContainer}>
+        {/* Header Line: Status Text & Overall Batch Counter */}
+        <View style={styles.syncBarHeader}>
+          <RefreshCw size={16} color="#F38020" strokeWidth={2.5} style={{ marginRight: 8 }} />
+          <Text style={[styles.syncBarText, { fontSize: 13, fontWeight: "700" }]} numberOfLines={1}>
+            {syncStatus?.statusText || "Fotoseicherung aktiv..."}
+          </Text>
         </View>
-      )}
+
+        {/* Progress Bar 1: Gesamt-Fortschritt (Overall Sync Queue) */}
+        <View style={{ marginTop: 10 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 5 }}>
+            <Text style={{ color: "#F8FAFC", fontSize: 12, fontWeight: "700" }}>Gesamt-Fortschritt</Text>
+            <Text style={{ color: "#F38020", fontSize: 12, fontWeight: "800" }}>
+              {(syncStatus?.totalNew || 0) > 0 ? Math.round(((syncStatus?.uploadedCount || 0) / (syncStatus?.totalNew || 1)) * 100) : 0}% ({syncStatus?.uploadedCount || 0} / {syncStatus?.totalNew || 0})
+            </Text>
+          </View>
+          <View style={[styles.progressBarTrack, { height: 10, backgroundColor: "#020617", borderWidth: 1, borderColor: "#334155" }]}>
+            <View 
+              style={[
+                styles.progressBarFill, 
+                { backgroundColor: "#F38020", width: `${(syncStatus?.totalNew || 0) > 0 ? Math.min(100, Math.max(2, Math.round(((syncStatus?.uploadedCount || 0) / (syncStatus?.totalNew || 1)) * 100))) : 2}%` }
+              ]} 
+            />
+          </View>
+        </View>
+
+        {/* Progress Bar 2: Aktuelle Datei (Single File Progress) */}
+        <View style={{ marginTop: 10 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 5 }}>
+            <Text style={{ color: "#F8FAFC", fontSize: 12, fontWeight: "700", flex: 1, marginRight: 8 }} numberOfLines={1}>
+              Datei: {syncStatus?.currentFileName || "Übertragung..."}
+            </Text>
+            <Text style={{ color: "#38BDF8", fontSize: 12, fontWeight: "800" }}>
+              {syncStatus?.currentFileProgress ?? 0}%
+            </Text>
+          </View>
+          <View style={[styles.progressBarTrack, { height: 10, backgroundColor: "#020617", borderWidth: 1, borderColor: "#334155" }]}>
+            <View 
+              style={[
+                styles.progressBarFill, 
+                { backgroundColor: "#38BDF8", width: `${Math.min(100, Math.max(2, syncStatus?.currentFileProgress ?? 0))}%` }
+              ]} 
+            />
+          </View>
+        </View>
+      </View>
 
       {/* Navigation Breadcrumb Back Button */}
       {currentFolder !== "" && (
