@@ -22,6 +22,7 @@ import { Image as ExpoImage } from "expo-image";
 import * as NavigationBar from "expo-navigation-bar";
 import { WebView } from "react-native-webview";
 import * as FileSystem from "expo-file-system/legacy";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Cloud,
   Folder,
