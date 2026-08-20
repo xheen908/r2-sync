@@ -388,12 +388,22 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
         }
       }
     });
-    const folderItems = Array.from(foldersSet).map((name) => ({
-      isFolder: true,
-      name,
-      path: prefix + name,
-    }));
-    return [...folderItems, ...fileItems.map((f) => ({ isFolder: false, ...f }))];
+    const folderItems = Array.from(foldersSet)
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({
+        isFolder: true,
+        name,
+        path: prefix + name,
+      }));
+
+    // Sort files descending by date (newest first)
+    const sortedFileItems = fileItems.sort((a: any, b: any) => {
+      const timeA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return timeB - timeA; // Descending (newest first)
+    });
+
+    return [...folderItems, ...sortedFileItems.map((f) => ({ isFolder: false, ...f }))];
   };
 
   // Compute current folder contents & subfolders
