@@ -358,9 +358,9 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     let completedCount = 0;
 
     // ----------------------------------------------------
-    // HIGH-PERFORMANCE: 12 Parallel Connection Worker Pool
+    // SEQUENTIAL SINGLE-FILE UPLOADER: 1 File at a Time
     // ----------------------------------------------------
-    const CONCURRENCY_LIMIT = 12; // Tuned for Wi-Fi 6 gigabit upload pipelines
+    const CONCURRENCY_LIMIT = 1; // Exactly 1 file at a time as requested by user
     let queueIndex = 0;
     let lastUiUpdate = 0;
 
