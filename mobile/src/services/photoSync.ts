@@ -7,7 +7,7 @@ import {
   MediaType,
 } from "expo-media-library/legacy";
 import * as TaskManager from "expo-task-manager";
-import * as BackgroundFetch from "expo-background-fetch";
+import * as BackgroundTask from "expo-background-task";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -111,31 +111,25 @@ TaskManager.defineTask(BACKGROUND_PHOTO_SYNC_TASK, async () => {
   console.log("[PhotoSync TaskManager] Executing lightweight background photo check...");
   try {
     const count = await runAutoPhotoSync();
-    return count > 0 ? BackgroundFetch.BackgroundFetchResult.NewData : BackgroundFetch.BackgroundFetchResult.NoData;
+    return count > 0 ? BackgroundTask.BackgroundTaskResult.Success : BackgroundTask.BackgroundTaskResult.Success;
   } catch (err) {
     console.warn("[PhotoSync TaskManager] Background task failed:", err);
-    return BackgroundFetch.BackgroundFetchResult.Failed;
+    return BackgroundTask.BackgroundTaskResult.Failed;
   }
 });
 
 export async function registerBackgroundPhotoSyncTask() {
   try {
     const minutes = await getSyncIntervalSetting();
-    const intervalSeconds = minutes * 60;
 
-    if (Platform.OS === "android") {
-      await BackgroundFetch.setMinimumIntervalAsync(intervalSeconds);
-    }
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_PHOTO_SYNC_TASK);
     if (isRegistered) {
-      await BackgroundFetch.unregisterTaskAsync(BACKGROUND_PHOTO_SYNC_TASK).catch(() => {});
+      await BackgroundTask.unregisterTaskAsync(BACKGROUND_PHOTO_SYNC_TASK).catch(() => {});
     }
-    await BackgroundFetch.registerTaskAsync(BACKGROUND_PHOTO_SYNC_TASK, {
-      minimumInterval: intervalSeconds,
-      stopOnTerminate: false,
-      startOnBoot: true,
+    await BackgroundTask.registerTaskAsync(BACKGROUND_PHOTO_SYNC_TASK, {
+      minimumInterval: minutes,
     });
-    console.log(`[PhotoSync] Registered background photo sync task with ${minutes}m interval.`);
+    console.log(`[PhotoSync] Registered background photo sync task with ${minutes}m interval via expo-background-task.`);
   } catch (err) {
     console.warn("[PhotoSync] Failed to register background task:", err);
   }
