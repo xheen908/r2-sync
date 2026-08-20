@@ -31,7 +31,8 @@ const NOTIFICATION_ID = "r2sync_photo_progress";
 // Configure Notification Handler for Foreground & Background
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
   }),
