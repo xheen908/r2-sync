@@ -55,9 +55,59 @@ import {
   ArrowDown,
 } from "lucide-react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
+import * as VideoThumbnails from "expo-video-thumbnails";
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp"];
 const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "mkv", "webm", "avi", "3gp"];
+
+// Dedicated Client-Side Native Video Thumbnail Generator Component
+const VideoThumbnailTile: React.FC<{ videoUrl: string; fileExt: string }> = ({ videoUrl, fileExt }) => {
+  const [thumbUri, setThumbUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, { time: 1000 });
+        if (isMounted && uri) setThumbUri(uri);
+      } catch (err) {
+        // Fallback to time 0 if time 1000 fails
+        try {
+          const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, { time: 0 });
+          if (isMounted && uri) setThumbUri(uri);
+        } catch (e) {}
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [videoUrl]);
+
+  if (thumbUri) {
+    return (
+      <View style={{ flex: 1, width: "100%", height: "100%" }}>
+        <ExpoImage
+          source={{ uri: thumbUri }}
+          style={{ width: "100%", height: "100%" }}
+          contentFit="cover"
+          transition={150}
+        />
+        <View style={{ position: "absolute", top: 8, right: 8, backgroundColor: "rgba(15, 23, 42, 0.8)", borderRadius: 12, padding: 5 }}>
+          <Play size={14} color="#F38020" fill="#F38020" />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: "#1E152A", justifyContent: "center", alignItems: "center", width: "100%", height: "100%" }}>
+      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(243, 128, 32, 0.2)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "#F38020" }}>
+        <Play size={20} color="#F38020" fill="#F38020" style={{ marginLeft: 2 }} />
+      </View>
+      <Text style={{ color: "#F38020", fontSize: 10, fontWeight: "700", marginTop: 6, textTransform: "uppercase" }}>
+        VIDEO • .{fileExt}
+      </Text>
+    </View>
+  );
+};
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GALLERY_COLS = 3;
 const GALLERY_TILE = (SCREEN_WIDTH - 4) / GALLERY_COLS;
@@ -691,31 +741,20 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
         onLongPress={() => { setSelectedFile(item); setIsActionModalVisible(true); }}
         activeOpacity={0.85}
       >
-        {(isImage || isVideo) && thumbUrl ? (
-          <View style={{ flex: 1, width: "100%", height: "100%" }}>
-            <ExpoImage
-              source={{ uri: thumbUrl }}
-              style={styles.galleryThumb}
-              contentFit="cover"
-              cachePolicy="disk"
-              recyclingKey={item.path}
-              transition={150}
-            />
-            {isVideo && (
-              <View style={{ position: "absolute", top: 8, right: 8, backgroundColor: "rgba(15, 23, 42, 0.75)", borderRadius: 12, padding: 4 }}>
-                <Play size={14} color="#F38020" fill="#F38020" />
-              </View>
-            )}
-          </View>
-        ) : isVideo ? (
-          <View style={[styles.galleryThumbPlaceholder, { backgroundColor: "#1E152A", justifyContent: "center", alignItems: "center" }]}>
-            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(243, 128, 32, 0.2)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "#F38020" }}>
-              <Play size={20} color="#F38020" fill="#F38020" style={{ marginLeft: 2 }} />
-            </View>
-            <Text style={{ color: "#F38020", fontSize: 10, fontWeight: "700", marginTop: 6, textTransform: "uppercase" }}>
-              VIDEO • .{fileExt}
-            </Text>
-          </View>
+        {isImage && thumbUrl ? (
+          <ExpoImage
+            source={{ uri: thumbUrl }}
+            style={styles.galleryThumb}
+            contentFit="cover"
+            cachePolicy="disk"
+            recyclingKey={item.path}
+            transition={150}
+          />
+        ) : isVideo && serverUrl ? (
+          <VideoThumbnailTile
+            videoUrl={`${serverUrl}/api/files/download?filePath=${encodeURIComponent(item.path)}`}
+            fileExt={fileExt}
+          />
         ) : (
           <View style={styles.galleryThumbPlaceholder}>
             <FileText size={28} color="#38BDF8" strokeWidth={1.5} />
