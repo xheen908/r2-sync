@@ -456,7 +456,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
 
     if (successCount > 0) {
       const finishText = `Sync abgeschlossen: ${successCount} Datei(en) gesichert`;
-      onProgress?.({
+      broadcastSyncProgress({
         isSyncing: false,
         totalNew: newAssets.length,
         uploadedCount: successCount,
@@ -465,14 +465,14 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
       await showProgressNotification("✅ R2Sync Medien-Backup", finishText, true);
 
       setTimeout(() => {
-        onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "" });
+        broadcastSyncProgress({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "" });
       }, 8000);
     }
 
     return successCount;
   } catch (err: any) {
     console.warn("Auto photo sync error:", err);
-    onProgress?.({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Fotoseicherung bereit" });
+    broadcastSyncProgress({ isSyncing: false, totalNew: 0, uploadedCount: 0, statusText: "Fotoseicherung bereit" });
     return 0;
   } finally {
     isSyncInProgress = false;
