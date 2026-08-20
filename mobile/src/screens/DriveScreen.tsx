@@ -50,6 +50,9 @@ import {
   Key,
   Video,
   Play,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 
@@ -98,6 +101,8 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
   const [isRenaming, setIsRenaming] = useState(false);
   // Gallery / List toggle: 'auto' respects auto-detection, 'list' forces list, 'gallery' forces gallery
   const [viewMode, setViewMode] = useState<'auto' | 'list' | 'gallery'>('auto');
+  // Sort order: 'date_desc' (newest first), 'date_asc' (oldest first), 'name_asc' (A-Z), 'name_desc' (Z-A), 'size_desc' (largest first)
+  const [sortOrder, setSortOrder] = useState<'date_desc' | 'date_asc' | 'name_asc' | 'name_desc' | 'size_desc'>('date_desc');
   const [serverUrl, setServerUrl] = useState<string>("");
 
   // Viewer Modals State
@@ -396,11 +401,20 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
         path: prefix + name,
       }));
 
-    // Sort files descending by date (newest first)
+    // Sort files dynamically based on selected sortOrder
     const sortedFileItems = fileItems.sort((a: any, b: any) => {
       const timeA = new Date(a.updatedAt || a.createdAt || 0).getTime();
       const timeB = new Date(b.updatedAt || b.createdAt || 0).getTime();
-      return timeB - timeA; // Descending (newest first)
+      const nameA = (a.filename || a.name || "").toLowerCase();
+      const nameB = (b.filename || b.name || "").toLowerCase();
+      const sizeA = a.size || 0;
+      const sizeB = b.size || 0;
+
+      if (sortOrder === "date_asc") return timeA - timeB; // Oldest first
+      if (sortOrder === "name_asc") return nameA.localeCompare(nameB); // A-Z
+      if (sortOrder === "name_desc") return nameB.localeCompare(nameA); // Z-A
+      if (sortOrder === "size_desc") return sizeB - sizeA; // Largest first
+      return timeB - timeA; // Default: date_desc (Newest first)
     });
 
     return [...folderItems, ...sortedFileItems.map((f) => ({ isFolder: false, ...f }))];
@@ -807,6 +821,26 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
 
         <View style={styles.headerActions}>
 
+          {/* Sort Filter Toggle Button */}
+          <TouchableOpacity
+            style={[
+              styles.viewToggleBtn,
+              sortOrder !== "date_desc" && { backgroundColor: "rgba(243, 128, 32, 0.2)", borderColor: "#F38020" },
+            ]}
+            activeOpacity={0.8}
+            onPress={() => {
+              setSortOrder((prev) => {
+                if (prev === "date_desc") return "date_asc";
+                if (prev === "date_asc") return "name_asc";
+                if (prev === "name_asc") return "name_desc";
+                if (prev === "name_desc") return "size_desc";
+                return "date_desc";
+              });
+            }}
+          >
+            <ArrowUpDown size={18} color={sortOrder !== "date_desc" ? "#F38020" : "#94A3B8"} strokeWidth={2} />
+          </TouchableOpacity>
+
           {/* Gallery / List toggle */}
           <TouchableOpacity
             style={styles.viewToggleBtn}
@@ -901,6 +935,50 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
           <Text style={styles.backBtnText}>Zurück in übergeordneten Ordner</Text>
         </TouchableOpacity>
       )}
+
+      {/* Sort Filter Bar with Interactive Pills */}
+      <View style={{ paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#1E293B" }}>
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={[
+            { id: "date_desc", label: "📅 Neueste zuerst" },
+            { id: "date_asc", label: "⏳ Älteste zuerst" },
+            { id: "name_asc", label: "🔤 Name (A-Z)" },
+            { id: "name_desc", label: "🔠 Name (Z-A)" },
+            { id: "size_desc", label: "💾 Größte zuerst" },
+          ]}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => {
+            const isActive = sortOrder === item.id;
+            return (
+              <TouchableOpacity
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 16,
+                  backgroundColor: isActive ? "#F38020" : "#1E293B",
+                  marginRight: 8,
+                  borderWidth: 1,
+                  borderColor: isActive ? "#F38020" : "#334155",
+                }}
+                activeOpacity={0.7}
+                onPress={() => setSortOrder(item.id as any)}
+              >
+                <Text
+                  style={{
+                    color: isActive ? "#0F172A" : "#94A3B8",
+                    fontSize: 12,
+                    fontWeight: isActive ? "700" : "600",
+                  }}
+                >
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </View>
 
       {/* Auto-detected gallery badge */}
       {shouldShowGallery() && viewMode === 'auto' && (
