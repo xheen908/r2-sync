@@ -6,6 +6,7 @@ import sharp from "sharp";
 export const dynamic = "force-dynamic";
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff", "heic"]);
+const VIDEO_EXTS = new Set(["mp4", "mov", "m4v", "mkv", "webm", "avi", "3gp"]);
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -17,8 +18,11 @@ export async function GET(request: Request) {
   }
 
   const ext = filePath.split(".").pop()?.toLowerCase() || "";
-  if (!IMAGE_EXTS.has(ext)) {
-    return NextResponse.json({ error: "Not an image" }, { status: 400 });
+  const isImage = IMAGE_EXTS.has(ext);
+  const isVideo = VIDEO_EXTS.has(ext);
+
+  if (!isImage && !isVideo) {
+    return NextResponse.json({ error: "Unsupported media format" }, { status: 400 });
   }
 
   try {

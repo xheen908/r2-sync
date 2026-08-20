@@ -48,9 +48,13 @@ import {
   CheckCircle2,
   AlertCircle,
   Key,
+  Video,
+  Play,
 } from "lucide-react-native";
+import { useVideoPlayer, VideoView } from "expo-video";
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp"];
+const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "mkv", "webm", "avi", "3gp"];
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GALLERY_COLS = 3;
 const GALLERY_TILE = (SCREEN_WIDTH - 4) / GALLERY_COLS;
@@ -106,6 +110,14 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
   const [isPdfPreviewVisible, setIsPdfPreviewVisible] = useState(false);
   const [previewPdfHtml, setPreviewPdfHtml] = useState<string | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
+
+  // Video Viewer Modal State
+  const [isVideoPreviewVisible, setIsVideoPreviewVisible] = useState(false);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+  const videoPlayer = useVideoPlayer(previewVideoUrl || "", (player) => {
+    player.loop = false;
+    player.play();
+  });
 
   // Settings Modal State (Konto & Cloudflare R2 Credentials)
   const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
@@ -393,7 +405,8 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
     if (!cfg) return;
 
     const fileExt = item.filename.split(".").pop()?.toLowerCase() || "";
-    const isImage = ["jpg", "jpeg", "png", "webp", "gif", "heic", "bmp"].includes(fileExt);
+    const isImage = IMAGE_EXTENSIONS.includes(fileExt);
+    const isVideo = VIDEO_EXTENSIONS.includes(fileExt);
     const isPdf = fileExt === "pdf";
 
     const downloadUrl = `${cfg.serverUrl}/api/files/download?filePath=${encodeURIComponent(item.path)}`;
@@ -416,6 +429,10 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
       setTimeout(() => {
         previewListRef.current?.scrollToIndex({ index: idx >= 0 ? idx : 0, animated: false });
       }, 50);
+    } else if (isVideo) {
+      setSelectedFile(item);
+      setPreviewVideoUrl(downloadUrl);
+      setIsVideoPreviewVisible(true);
     } else if (isPdf) {
       setSelectedFile(item);
       setIsPdfLoading(true);
@@ -638,7 +655,8 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
 
     const fileExt = (item.filename || "").split(".").pop()?.toLowerCase() || "";
     const isImage = IMAGE_EXTENSIONS.includes(fileExt);
-    const thumbUrl = serverUrl && isImage
+    const isVideo = VIDEO_EXTENSIONS.includes(fileExt);
+    const thumbUrl = serverUrl && (isImage || isVideo)
       ? `${serverUrl}/api/files/thumbnail?filePath=${encodeURIComponent(item.path)}&size=300`
       : null;
 
@@ -649,15 +667,27 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
         onLongPress={() => { setSelectedFile(item); setIsActionModalVisible(true); }}
         activeOpacity={0.85}
       >
-        {isImage && thumbUrl ? (
-          <ExpoImage
-            source={{ uri: thumbUrl }}
-            style={styles.galleryThumb}
-            contentFit="cover"
-            cachePolicy="disk"
-            recyclingKey={item.path}
-            transition={150}
-          />
+        {(isImage || isVideo) && thumbUrl ? (
+          <View style={{ flex: 1, width: "100%", height: "100%" }}>
+            <ExpoImage
+              source={{ uri: thumbUrl }}
+              style={styles.galleryThumb}
+              contentFit="cover"
+              cachePolicy="disk"
+              recyclingKey={item.path}
+              transition={150}
+            />
+            {isVideo && (
+              <View style={{ position: "absolute", top: 8, right: 8, backgroundColor: "rgba(15, 23, 42, 0.75)", borderRadius: 12, padding: 4 }}>
+                <Play size={14} color="#F38020" fill="#F38020" />
+              </View>
+            )}
+          </View>
+        ) : isVideo ? (
+          <View style={[styles.galleryThumbPlaceholder, { backgroundColor: "#1E1B4B" }]}>
+            <Video size={28} color="#F38020" strokeWidth={1.5} />
+            <Text style={[styles.galleryThumbExt, { color: "#F38020" }]}>.{fileExt}</Text>
+          </View>
         ) : (
           <View style={styles.galleryThumbPlaceholder}>
             <FileText size={28} color="#38BDF8" strokeWidth={1.5} />
@@ -706,6 +736,7 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
 
     const fileExt = item.filename.split(".").pop()?.toLowerCase() || "";
     const isImage = IMAGE_EXTENSIONS.includes(fileExt);
+    const isVideo = VIDEO_EXTENSIONS.includes(fileExt);
     const isPdf = fileExt === "pdf";
 
     return (
@@ -718,9 +749,11 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
         }}
         activeOpacity={0.7}
       >
-        <View style={isImage ? styles.iconContainerImage : isPdf ? styles.iconContainerPdf : styles.iconContainerFile}>
+        <View style={isImage ? styles.iconContainerImage : isVideo ? [styles.iconContainerImage, { backgroundColor: "#311B92" }] : isPdf ? styles.iconContainerPdf : styles.iconContainerFile}>
           {isImage ? (
             <Eye size={22} color="#A855F7" strokeWidth={2} />
+          ) : isVideo ? (
+            <Video size={22} color="#F38020" strokeWidth={2} />
           ) : isPdf ? (
             <FileText size={22} color="#EF4444" strokeWidth={2} />
           ) : (
@@ -1057,6 +1090,60 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
                   )}
                 />
               ) : null}
+            </View>
+
+            {/* Action Footer */}
+            <View style={styles.viewerFooter}>
+              <TouchableOpacity
+                style={styles.viewerActionBtn}
+                onPress={() => handleShareLink(selectedFile.path, 24)}
+              >
+                <Share2 size={18} color="#38BDF8" style={{ marginRight: 8 }} />
+                <Text style={styles.viewerActionText}>Teilen</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.viewerActionBtn, styles.deleteBtn]}
+                onPress={() => handleDelete(selectedFile.path)}
+              >
+                <Trash2 size={18} color="#FCA5A5" style={{ marginRight: 8 }} />
+                <Text style={[styles.viewerActionText, styles.deleteBtnText]}>Löschen</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </Modal>
+      )}
+
+      {/* Fullscreen Video Player Modal */}
+      {selectedFile && isVideoPreviewVisible && (
+        <Modal
+          visible={isVideoPreviewVisible}
+          transparent={false}
+          animationType="fade"
+          onRequestClose={() => setIsVideoPreviewVisible(false)}
+        >
+          <SafeAreaView style={styles.viewerContainer} edges={["top", "bottom"]}>
+            {/* Header */}
+            <View style={styles.viewerHeader}>
+              <Text style={styles.viewerTitle} numberOfLines={1}>
+                🎬 {selectedFile.filename}
+              </Text>
+              <TouchableOpacity
+                style={styles.closeBtn}
+                onPress={() => setIsVideoPreviewVisible(false)}
+              >
+                <X size={24} color="#F8FAFC" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Video View */}
+            <View style={{ flex: 1, backgroundColor: "#000", justifyContent: "center", alignItems: "center" }}>
+              <VideoView
+                style={{ width: "100%", height: "100%" }}
+                player={videoPlayer}
+                allowsFullscreen
+                allowsPictureInPicture
+              />
             </View>
 
             {/* Action Footer */}

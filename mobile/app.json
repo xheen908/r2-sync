@@ -3,7 +3,7 @@
     "name": "R2Sync",
     "slug": "r2sync-mobile",
     "scheme": "r2sync",
-    "version": "0.2.47",
+    "version": "0.2.48",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.r2sync.mobile",
-      "versionCode": 147,
+      "versionCode": 148,
       "navigationBar": {
         "backgroundColor": "#0B1120",
         "barStyle": "light-content"
@@ -47,7 +47,8 @@
         }
       ],
       "expo-image",
-      "expo-background-task"
+      "expo-background-task",
+      "expo-video"
     ]
   }
 }
