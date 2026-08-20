@@ -68,14 +68,21 @@ const VideoThumbnailTile: React.FC<{ videoUrl: string; fileExt: string }> = ({ v
     let isMounted = true;
     (async () => {
       try {
-        const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, { time: 1000 });
+        const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
+        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+        const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, { time: 1000, headers });
         if (isMounted && uri) setThumbUri(uri);
-      } catch (err) {
+      } catch (err: any) {
+        console.log("[VideoThumbnails] Error loading 1s frame:", err?.message || err, videoUrl);
         // Fallback to time 0 if time 1000 fails
         try {
-          const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, { time: 0 });
+          const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
+          const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+          const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, { time: 0, headers });
           if (isMounted && uri) setThumbUri(uri);
-        } catch (e) {}
+        } catch (e: any) {
+          console.log("[VideoThumbnails] Fallback 0s frame failed:", e?.message || e);
+        }
       }
     })();
     return () => { isMounted = false; };

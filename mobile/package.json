@@ -1,6 +1,6 @@
 {
   "name": "r2sync-mobile",
-  "version": "0.2.52",
+  "version": "0.2.53",
   "main": "index.ts",
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
