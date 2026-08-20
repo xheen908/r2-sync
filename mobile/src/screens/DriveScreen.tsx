@@ -708,9 +708,13 @@ export const DriveScreen: React.FC<DriveScreenProps> = ({ onLogout, onOpenSettin
             )}
           </View>
         ) : isVideo ? (
-          <View style={[styles.galleryThumbPlaceholder, { backgroundColor: "#1E1B4B" }]}>
-            <Video size={28} color="#F38020" strokeWidth={1.5} />
-            <Text style={[styles.galleryThumbExt, { color: "#F38020" }]}>.{fileExt}</Text>
+          <View style={[styles.galleryThumbPlaceholder, { backgroundColor: "#1E152A", justifyContent: "center", alignItems: "center" }]}>
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(243, 128, 32, 0.2)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "#F38020" }}>
+              <Play size={20} color="#F38020" fill="#F38020" style={{ marginLeft: 2 }} />
+            </View>
+            <Text style={{ color: "#F38020", fontSize: 10, fontWeight: "700", marginTop: 6, textTransform: "uppercase" }}>
+              VIDEO • .{fileExt}
+            </Text>
           </View>
         ) : (
           <View style={styles.galleryThumbPlaceholder}>
