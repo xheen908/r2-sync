@@ -162,12 +162,6 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     addSyncProgressListener(onProgress);
   }
 
-  // Lock Safety Timeout: Reset lock if it was stuck/held for > 3 minutes (e.g. app restart/crash during active upload)
-  if (isSyncInProgress && Date.now() - lastSyncStartTime > 180000) {
-    console.warn("[PhotoSync] Sync lock held for > 3m. Forcing lock reset.");
-    isSyncInProgress = false;
-  }
-
   if (isSyncInProgress) {
     console.log("[PhotoSync] Sync already in progress, registered listener to ongoing sync.");
     if (lastReportedSyncStatus) {
