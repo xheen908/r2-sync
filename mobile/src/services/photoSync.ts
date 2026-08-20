@@ -285,6 +285,13 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
     // 3. Smart Remote Reconciliation:
     let reconciledCount = 0;
     if (allFetchedAssets.length > 0) {
+      // Pre-compute clean remote base names set for O(1) matching
+      const cleanRemoteBaseSet = new Set<string>();
+      for (const rBase of remoteBaseNamesSet) {
+        const c = rBase.replace(/[^a-z0-9]/g, "");
+        if (c.length > 5) cleanRemoteBaseSet.add(c);
+      }
+
       for (const asset of allFetchedAssets) {
         if (!asset || !asset.id) continue;
 
@@ -305,7 +312,7 @@ export async function runAutoPhotoSync(onProgress?: (status: SyncProgressStatus)
           remotePathsSet.has(expectedPathLower) || 
           remoteFilenamesSet.has(filename) || 
           remoteBaseNamesSet.has(baseName) ||
-          Array.from(remoteBaseNamesSet).some((rBase) => rBase.replace(/[^a-z0-9]/g, "") === cleanBase && cleanBase.length > 5);
+          (cleanBase.length > 5 && !cleanBase.startsWith("photo") && cleanRemoteBaseSet.has(cleanBase));
 
         if (!existsInR2 && syncedIdsSet.has(asset.id)) {
           syncedIdsSet.delete(asset.id);
