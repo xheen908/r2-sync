@@ -319,9 +319,9 @@ export default function PublicSharePage() {
                             </span>
 
                             {(() => {
-                              const ext = file.filename.split(".").pop()?.toLowerCase() || "";
-                              const isPreviewable = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic", "pdf"].includes(ext);
-                              if (!isPreviewable) return null;
+                            const ext = file.filename.split(".").pop()?.toLowerCase() || "";
+                            const isPreviewable = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic", "pdf", "mp4", "webm", "ogg", "mov", "mp3", "wav", "m4a", "aac"].includes(ext);
+                            if (!isPreviewable) return null;
                               return (
                                 <button
                                   onClick={(e) => {
@@ -374,6 +374,8 @@ export default function PublicSharePage() {
                   const ext = shareInfo?.filename.split(".").pop()?.toLowerCase() || "";
                   const isImage = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic"].includes(ext);
                   const isPdf = ext === "pdf";
+                  const isVideo = ["mp4", "webm", "ogg", "mov"].includes(ext);
+                  const isAudio = ["mp3", "wav", "m4a", "aac"].includes(ext);
                   
                   const downloadUrl = `/api/s/${shareId}/download?inline=1${password ? `&password=${encodeURIComponent(password)}` : ""}`;
 
@@ -396,6 +398,31 @@ export default function PublicSharePage() {
                           src={downloadUrl}
                           className="w-full h-[65vh] rounded-xl bg-slate-900 border-0"
                           title={shareInfo?.filename}
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (isVideo) {
+                    return (
+                      <div className="w-full bg-slate-950/80 p-2 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center">
+                        <video
+                          src={downloadUrl}
+                          controls
+                          className="max-h-[65vh] max-w-full rounded-xl"
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (isAudio) {
+                    return (
+                      <div className="w-full bg-slate-950/80 p-6 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center justify-center gap-4">
+                        <FileText className="w-12 h-12 text-orange-400" />
+                        <audio
+                          src={downloadUrl}
+                          controls
+                          className="w-full max-w-md"
                         />
                       </div>
                     );
@@ -474,6 +501,8 @@ export default function PublicSharePage() {
               const ext = previewModalFile.filename.split(".").pop()?.toLowerCase() || "";
               const isImage = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic"].includes(ext);
               const isPdf = ext === "pdf";
+              const isVideo = ["mp4", "webm", "ogg", "mov"].includes(ext);
+              const isAudio = ["mp3", "wav", "m4a", "aac"].includes(ext);
               
               const downloadUrl = `/api/s/${shareId}/download?inline=1${
                 previewModalFile.path ? `&filePath=${encodeURIComponent(previewModalFile.path)}` : ""
@@ -496,6 +525,31 @@ export default function PublicSharePage() {
                     className="w-full h-[85vh] rounded-2xl border border-slate-800 shadow-2xl bg-slate-900 border-0"
                     title={previewModalFile.filename}
                   />
+                );
+              }
+
+              if (isVideo) {
+                return (
+                  <video
+                    src={downloadUrl}
+                    controls
+                    autoPlay
+                    className="max-h-[85vh] max-w-[95vw] w-auto h-auto rounded-2xl shadow-2xl border border-slate-800/80"
+                  />
+                );
+              }
+
+              if (isAudio) {
+                return (
+                  <div className="w-full max-w-md bg-slate-900 p-8 rounded-3xl shadow-2xl border border-slate-800/80 flex flex-col items-center justify-center gap-6">
+                    <FileText className="w-20 h-20 text-orange-400 drop-shadow-lg" />
+                    <audio
+                      src={downloadUrl}
+                      controls
+                      autoPlay
+                      className="w-full"
+                    />
+                  </div>
                 );
               }
 
