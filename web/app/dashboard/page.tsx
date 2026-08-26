@@ -44,6 +44,7 @@ import {
   Globe,
   Sliders,
   ChevronDown,
+  LayoutGrid,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 
@@ -102,6 +103,7 @@ export default function DashboardPage() {
   const router = useRouter();
 
   // Files & Navigation state
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentPath, setCurrentPath] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -198,6 +200,10 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
+    const savedMode = localStorage.getItem("r2sync_view_mode");
+    if (savedMode === "grid" || savedMode === "list") {
+      setViewMode(savedMode);
+    }
     fetchFiles();
     fetchSettings();
 
@@ -228,6 +234,11 @@ export default function DashboardPage() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  const toggleViewMode = (mode: "list" | "grid") => {
+    setViewMode(mode);
+    localStorage.setItem("r2sync_view_mode", mode);
+  };
 
   const handleContextMenu = (e: React.MouseEvent, row: ExplorerRow) => {
     e.preventDefault();
@@ -285,15 +296,7 @@ export default function DashboardPage() {
   };
 
   const handleFileClick = (file: FileItem) => {
-    const ext = file.filename.split(".").pop()?.toLowerCase() || "";
-    const isImage = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic"].includes(ext);
-    const isPdf = ext === "pdf";
-
-    if (isImage || isPdf) {
-      setPreviewModalFile(file);
-    } else {
-      handleDirectDownload(file);
-    }
+    setPreviewModalFile(file);
   };
 
   const handleSaveR2Settings = async (e: React.FormEvent) => {
@@ -717,16 +720,36 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Search Input */}
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            {/* View Mode Toggle */}
+            <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl p-1">
+              <button
+                onClick={() => toggleViewMode("list")}
+                className={`p-1.5 rounded-lg transition-colors ${viewMode === "list" ? "bg-orange-500/20 text-orange-400" : "text-slate-500 hover:text-slate-300"}`}
+                title="Listen-Ansicht"
+              >
+                <List className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => toggleViewMode("grid")}
+                className={`p-1.5 rounded-lg transition-colors ${viewMode === "grid" ? "bg-orange-500/20 text-orange-400" : "text-slate-500 hover:text-slate-300"}`}
+                title="Galerie-Ansicht"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Alle Dateien durchsuchen..."
               className="w-full bg-slate-950/80 border border-slate-800 focus:border-orange-500 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder-slate-500 outline-none transition-all"
             />
+            </div>
           </div>
         </div>
 
@@ -758,7 +781,7 @@ export default function DashboardPage() {
                 Ziehe Dateien von deinem PC hierher zum Hochladen oder per Rechtsklick Aktionen ausführen.
               </p>
             </div>
-          ) : (
+          ) : viewMode === "list" ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-300 select-none">
                 <thead className="bg-slate-900/90 text-xs uppercase font-semibold text-slate-400 border-b border-slate-800">
@@ -914,6 +937,89 @@ export default function DashboardPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          ) : (
+            <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              {displayRows.map((row) => {
+                const isHoveredTarget = row.isFolder && dragOverFolder === row.fullPath;
+                const isBeingDragged = draggedItem && ((row.isFolder && draggedItem.isFolder && draggedItem.fullPath === row.fullPath) || (!row.isFolder && !draggedItem.isFolder && draggedItem.item.path === row.item.path));
+                
+                if (row.isFolder) {
+                  return (
+                    <div
+                      key={`grid_folder_${row.fullPath}`}
+                      draggable
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        e.dataTransfer.setData("text/plain", row.fullPath);
+                        setDraggedItem(row);
+                      }}
+                      onDragEnd={() => setDraggedItem(null)}
+                      onClick={() => setCurrentPath(row.fullPath)}
+                      onContextMenu={(e) => handleContextMenu(e, row)}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!isBeingDragged) setDragOverFolder(row.fullPath);
+                      }}
+                      onDragLeave={() => setDragOverFolder(null)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOverFolder(null);
+                        if (draggedItem) {
+                          moveItemToFolder(draggedItem, row.fullPath);
+                          setDraggedItem(null);
+                        }
+                      }}
+                      className={`group flex flex-col items-center justify-center p-4 rounded-2xl border cursor-pointer transition-all ${
+                        isHoveredTarget
+                          ? "bg-orange-500/20 border-orange-500/50 scale-105"
+                          : "bg-slate-900 border-slate-800 hover:bg-slate-800 hover:border-slate-700"
+                      }`}
+                    >
+                      <Folder className={`w-12 h-12 mb-3 ${isHoveredTarget ? "text-orange-400" : "text-amber-400 group-hover:text-amber-300"}`} fill="currentColor" />
+                      <span className="text-sm font-medium text-slate-200 text-center line-clamp-2 break-all">{row.name}</span>
+                    </div>
+                  );
+                } else {
+                  const ext = row.item.filename.split(".").pop()?.toLowerCase() || "";
+                  const isImage = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "heic"].includes(ext);
+                  
+                  return (
+                    <div
+                      key={`grid_file_${row.item.path}`}
+                      draggable
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        setDraggedItem(row);
+                      }}
+                      onDragEnd={() => setDraggedItem(null)}
+                      onClick={() => handleFileClick(row.item)}
+                      onContextMenu={(e) => handleContextMenu(e, row)}
+                      className="group flex flex-col items-center p-3 rounded-2xl border cursor-pointer transition-all bg-slate-900 border-slate-800 hover:bg-slate-800 hover:border-slate-700"
+                    >
+                      <div className="w-full aspect-square bg-slate-950 rounded-xl mb-3 flex items-center justify-center overflow-hidden border border-slate-800 group-hover:border-slate-700 relative">
+                        {isImage ? (
+                          <img 
+                            src={`/api/files/thumbnail?filePath=${encodeURIComponent(row.item.path)}&size=300`} 
+                            alt={row.item.filename}
+                            className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="transform transition-transform group-hover:scale-110">
+                            {getFileIcon(row.item.filename)}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-xs font-medium text-slate-300 text-center line-clamp-2 w-full break-all" title={row.item.filename}>
+                        {row.item.filename}
+                      </span>
+                    </div>
+                  );
+                }
+              })}
             </div>
           )}
         </div>
@@ -1670,6 +1776,8 @@ export default function DashboardPage() {
               const ext = previewModalFile.filename.split(".").pop()?.toLowerCase() || "";
               const isImage = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "heic"].includes(ext);
               const isPdf = ext === "pdf";
+              const isVideo = ["mp4", "webm", "ogg", "mov"].includes(ext);
+              const isAudio = ["mp3", "wav", "m4a", "aac"].includes(ext);
               const downloadUrl = `/api/files/download?filePath=${encodeURIComponent(previewModalFile.path)}&inline=1`;
 
               if (isImage) {
@@ -1692,7 +1800,45 @@ export default function DashboardPage() {
                 );
               }
 
-              return null;
+              if (isVideo) {
+                return (
+                  <video
+                    src={downloadUrl}
+                    controls
+                    autoPlay
+                    className="max-h-[85vh] max-w-[95vw] w-auto h-auto rounded-2xl shadow-2xl border border-slate-800/80"
+                  />
+                );
+              }
+
+              if (isAudio) {
+                return (
+                  <div className="w-full max-w-md bg-slate-900 p-8 rounded-3xl shadow-2xl border border-slate-800/80 flex flex-col items-center justify-center gap-6">
+                    <FileText className="w-20 h-20 text-orange-400 drop-shadow-lg" />
+                    <audio src={downloadUrl} controls autoPlay className="w-full" />
+                  </div>
+                );
+              }
+
+              // Fallback for non-media files
+              return (
+                <div className="flex flex-col items-center justify-center text-center p-12 bg-slate-900/50 border border-slate-800 rounded-3xl shadow-2xl max-w-md w-full gap-6">
+                  <div className="w-24 h-24 bg-slate-800/50 rounded-2xl flex items-center justify-center transform scale-150 border border-slate-700">
+                    <FileText className="w-12 h-12 text-slate-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-white mb-2 break-all">{previewModalFile.filename}</h4>
+                    <p className="text-sm text-slate-400">Keine direkte Dateivorschau verfügbar.</p>
+                  </div>
+                  <button
+                    onClick={() => handleDirectDownload(previewModalFile)}
+                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 mt-4"
+                  >
+                    <Download className="w-5 h-5" />
+                    <span>Jetzt Herunterladen</span>
+                  </button>
+                </div>
+              );
             })()}
           </div>
 
