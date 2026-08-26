@@ -109,11 +109,20 @@ export async function GET(
 
   // Stream file directly from R2
   try {
-    const getFileCmd = new GetObjectCommand({
+
+    let getParams: any = {
       Bucket: r2BucketName,
       Key: targetKey,
-    });
+    };
+    
+    const rangeHeader = request.headers.get("range");
+    if (rangeHeader) {
+      getParams.Range = rangeHeader;
+    }
+
+    const getFileCmd = new GetObjectCommand(getParams);
     const fileRes = await s3Client.send(getFileCmd);
+
 
     if (!fileRes.Body) {
       return NextResponse.json({ error: "Originaldatei nicht gefunden" }, { status: 404 });
@@ -122,8 +131,20 @@ export async function GET(
     const stream = fileRes.Body.transformToWebStream();
     const headers = new Headers();
     
+
     const mimeType = getMimeType(filename, fileRes.ContentType);
     headers.set("Content-Type", mimeType);
+    headers.set("Accept-Ranges", "bytes");
+
+    if (fileRes.ContentRange) {
+      headers.set("Content-Range", fileRes.ContentRange);
+    }
+    if (fileRes.ContentLength) {
+      headers.set("Content-Length", fileRes.ContentLength.toString());
+    }
+
+    const status = fileRes.ContentRange ? 206 : 200;
+
 
     if (isInline) {
       headers.set("Content-Disposition", "inline");
@@ -131,7 +152,7 @@ export async function GET(
       headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
     }
 
-    return new Response(stream, { headers });
+    return new Response(stream, { headers, status });
   } catch (r2StreamErr) {
     return NextResponse.json({ error: "Fehler beim Laden der Datei aus R2" }, { status: 500 });
   }
